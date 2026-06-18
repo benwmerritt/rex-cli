@@ -11,6 +11,7 @@ import { getResource, listResource } from "./crud";
 export interface StocktakeSession {
   id: string;
   profile: string;
+  wmsFingerprint?: string;
   outletId: number;
   outletName?: string;
   userId: number;
@@ -99,6 +100,10 @@ export function maybeLoadSession(profile: string): StocktakeSession | undefined 
   }
 }
 
+export function sessionExists(profile: string): boolean {
+  return existsSync(sessionPath(profile));
+}
+
 export function saveSession(session: StocktakeSession, storageKey: string): void {
   const path = sessionPath(storageKey);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -113,6 +118,7 @@ export function clearSession(profile: string): void {
 
 export function createSession(input: {
   profile: string;
+  wmsFingerprint?: string;
   outlet: OutletRef;
   userId: number;
   now?: () => string;
@@ -121,6 +127,7 @@ export function createSession(input: {
   return {
     id: `${input.profile}-${Date.now().toString(36)}`,
     profile: input.profile,
+    ...(input.wmsFingerprint ? { wmsFingerprint: input.wmsFingerprint } : {}),
     outletId: input.outlet.id,
     outletName: input.outlet.name,
     userId: input.userId,

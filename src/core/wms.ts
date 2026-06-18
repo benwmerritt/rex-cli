@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Profile } from "./config";
 import { ApiError, ValidationError } from "./errors";
 import { fetchTransport, type Transport } from "./transport";
@@ -77,6 +78,15 @@ export function requireWmsConfig(profile: Profile): WmsConfig {
     password: password!,
     url: url!,
   };
+}
+
+export function wmsConfigFingerprint(config: WmsConfig): string {
+  const identity = {
+    clientId: config.clientId.trim(),
+    username: config.username.trim(),
+    url: postUrl(config.url.trim()),
+  };
+  return createHash("sha256").update(JSON.stringify(identity)).digest("hex").slice(0, 16);
 }
 
 export class WmsClient implements WmsClientLike {

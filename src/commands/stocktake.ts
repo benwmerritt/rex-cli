@@ -4,17 +4,18 @@ import { appendAudit } from "../core/audit";
 import { resolveStocktakeUserId } from "../core/config";
 import { ApiError, EXIT, RexError, ValidationError } from "../core/errors";
 import { parsePositiveInt } from "../core/validation";
+import { requireWmsConfig, wmsConfigFingerprint } from "../core/wms";
 import {
   clearSession,
   createSession,
   fetchOutletInventory,
   loadSession,
-  maybeLoadSession,
   parseCountArgs,
   removeLine,
   resolveOutlet,
   resolveProduct,
   saveSession,
+  sessionExists,
   sessionStorageKey,
   summarizeSession,
   upsertLine,
@@ -37,7 +38,8 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
       run(deps, async (ctx, opts) => {
         const profile = ctx.profile();
         const storageKey = sessionStorageKey(profile);
-        if (maybeLoadSession(storageKey) && !opts.force) {
+        if (sessionExists(storageKey) && !opts.force) {
+          loadSession(storageKey);
           throw new ValidationError("A stocktake session is already active.", {
             details: { hint: "Run `rex stocktake review`, `rex stocktake submit`, or `rex stocktake abort`." },
           });
@@ -49,8 +51,14 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
             details: { hint: "Use --user-id or configure stocktake_user_id with `rex config wms`." },
           });
         }
+        const wmsConfig = requireWmsConfig(profile);
         const outlet = await resolveOutlet(ctx.client(), opts.outlet as string);
-        const session = createSession({ profile: profile.name, outlet, userId });
+        const session = createSession({
+          profile: profile.name,
+          wmsFingerprint: wmsConfigFingerprint(wmsConfig),
+          outlet,
+          userId,
+        });
         saveSession(session, storageKey);
         ctx.output.result({ ok: true, session: summarizeSession(session) });
       }),
@@ -118,6 +126,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         const profile = ctx.profile();
         const storageKey = sessionStorageKey(profile);
         const session = loadSession(storageKey);
+        assertSessionWmsIdentity(session, wmsConfigFingerprint(requireWmsConfig(profile)));
         const submitLines = session.lines.filter((line) => line.variance !== 0);
         const payload = {
           outletId: session.outletId,
@@ -209,7 +218,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
       run(deps, (ctx) => {
         const profile = ctx.profile();
         const storageKey = sessionStorageKey(profile);
-        const existed = Boolean(maybeLoadSession(storageKey));
+        const existed = sessionExists(storageKey);
         const clearResult = clearLocalSession(storageKey, {
           warning: "Stocktake abort could not clear the local session.",
           hint: "Resolve the local session file issue before starting another stocktake.",
@@ -222,6 +231,23 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         });
       }),
     );
+}
+
+function assertSessionWmsIdentity(session: StocktakeSession, currentFingerprint: string): void {
+  if (!session.wmsFingerprint) {
+    throw new ValidationError("Stocktake session is missing WMS identity.", {
+      details: {
+        hint: "Run `rex stocktake abort` and start a new stocktake with the current WMS credentials.",
+      },
+    });
+  }
+  if (session.wmsFingerprint !== currentFingerprint) {
+    throw new ValidationError("Stocktake WMS credentials changed since this session began.", {
+      details: {
+        hint: "Run `rex stocktake abort` and start a new stocktake before submitting to WMS.",
+      },
+    });
+  }
 }
 
 function errorMessage(err: unknown): string {

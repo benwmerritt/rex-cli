@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildProgram } from "../../src/cli/program";
@@ -13,6 +13,12 @@ import type { CreateStocktakeInput, WmsClientLike } from "../../src/core/wms";
 import { capture } from "../helpers/capture";
 
 const auth: AuthProvider = { ensureToken: async () => "T", invalidate: () => {} };
+const WMS_ENV = {
+  REX_WMS_CLIENT_ID: "client-a",
+  REX_WMS_USERNAME: "wms-user",
+  REX_WMS_PASSWORD: "wms-pass",
+  REX_WMS_URL: "https://wms.example.test/service.asmx?WSDL",
+};
 
 let stateDir: string;
 let previousStateHome: string | undefined;
@@ -58,7 +64,7 @@ async function runCli(
   argv: string[],
   handler: (method: string, url: string) => unknown,
   wms?: WmsClientLike,
-  env: NodeJS.ProcessEnv = { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "4" },
+  env: NodeJS.ProcessEnv = { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "4", ...WMS_ENV },
 ) {
   const out = capture();
   const err = capture();
@@ -145,7 +151,7 @@ describe("rex stocktake", () => {
       ["stocktake", "begin", "--outlet", "3", "--user-id", "4"],
       retailExpressFixture,
       undefined,
-      { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "-1" },
+      { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "-1", ...WMS_ENV },
     );
 
     expect(JSON.parse(started.out)).toMatchObject({ ok: true, session: { outletId: 3, userId: 4 } });
@@ -154,7 +160,7 @@ describe("rex stocktake", () => {
 
   it("does not load a stocktake session from the same config profile after the API key changes", async () => {
     saveProfile({ name: "tenant", apiKey: "K1" });
-    const env = { REX_PROFILE: "tenant", REX_STOCKTAKE_USER_ID: "4" };
+    const env = { REX_PROFILE: "tenant", REX_STOCKTAKE_USER_ID: "4", ...WMS_ENV };
 
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture, undefined, env);
     saveProfile({ name: "tenant", apiKey: "K2" });
@@ -173,8 +179,8 @@ describe("rex stocktake", () => {
   });
 
   it("does not load an env-mode stocktake session after the API key changes", async () => {
-    const firstTenant = { REX_API_KEY: "K1", REX_STOCKTAKE_USER_ID: "4" };
-    const secondTenant = { REX_API_KEY: "K2", REX_STOCKTAKE_USER_ID: "4" };
+    const firstTenant = { REX_API_KEY: "K1", REX_STOCKTAKE_USER_ID: "4", ...WMS_ENV };
+    const secondTenant = { REX_API_KEY: "K2", REX_STOCKTAKE_USER_ID: "4", ...WMS_ENV };
 
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture, undefined, firstTenant);
 
@@ -270,6 +276,55 @@ describe("rex stocktake", () => {
     });
   });
 
+  it("refuses to overwrite a corrupted active session without force", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    const sessionFile = activeSessionPath();
+    writeFileSync(sessionFile, "{not json");
+
+    const started = await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+
+    expect(started.out).toBe("");
+    expect(JSON.parse(started.err).error).toMatchObject({
+      code: "validation",
+      message: "Stocktake session file is corrupted.",
+      details: {
+        path: sessionFile,
+        hint: "Run `rex stocktake abort` to clear it, then start over.",
+      },
+    });
+    expect(readFileSync(sessionFile, "utf8")).toBe("{not json");
+
+    process.exitCode = 0;
+    const forced = await runCli(["stocktake", "begin", "--outlet", "3", "--force"], retailExpressFixture);
+    expect(JSON.parse(forced.out)).toMatchObject({ ok: true, session: { outletId: 3, userId: 4 } });
+  });
+
+  it("rejects submit when the WMS identity changed after begin", async () => {
+    const beginEnv = { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "4", ...WMS_ENV };
+    const changedWmsEnv = { ...beginEnv, REX_WMS_CLIENT_ID: "client-b" };
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture, undefined, beginEnv);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture, undefined, beginEnv);
+
+    let submittedToWms = false;
+    const wms: WmsClientLike = {
+      createStocktake: async () => {
+        submittedToWms = true;
+        return { ok: true, result: "Success" };
+      },
+    };
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, wms, changedWmsEnv);
+
+    expect(submittedToWms).toBe(false);
+    expect(submitted.out).toBe("");
+    expect(JSON.parse(submitted.err).error).toMatchObject({
+      code: "validation",
+      message: "Stocktake WMS credentials changed since this session began.",
+      details: {
+        hint: "Run `rex stocktake abort` and start a new stocktake before submitting to WMS.",
+      },
+    });
+  });
+
   it("clears the session after WMS success even if audit logging fails", async () => {
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
     await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
@@ -338,7 +393,7 @@ describe("rex stocktake", () => {
     expect(aborted.err).toBe("");
     expect(JSON.parse(aborted.out)).toMatchObject({
       ok: true,
-      aborted: false,
+      aborted: true,
       cleared: false,
       clear: {
         warning: "Stocktake abort could not clear the local session.",
