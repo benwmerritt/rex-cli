@@ -248,6 +248,21 @@ describe("saveProfile / setDefaultProfile", () => {
     ).toThrow(ValidationError);
   });
 
+  it("rejects WMS SOAP credentials for unsafe profile names", () => {
+    expect(() =>
+      saveWmsProfile(
+        {
+          name: "../tenant",
+          clientId: "CID",
+          username: "wsi",
+          password: "secret",
+          url: "https://wms/service.asmx?wsdl",
+        },
+        configPath,
+      ),
+    ).toThrow(ValidationError);
+  });
+
   it("clears only the WMS stocktake user id when saveWmsProfile receives null", () => {
     saveProfile({ name: "a", apiKey: "K1" }, configPath);
     saveWmsProfile(

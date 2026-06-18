@@ -207,11 +207,12 @@ function withoutTenantScopedFields(profile: RawProfile | undefined): RawProfile 
 }
 
 export function saveWmsProfile(input: SaveWmsProfileInput, configPath: string = configFile()): void {
+  const profileName = validateSafeProfileName(input.name);
   const config = loadConfig(configPath);
-  const existing = config.profiles[input.name];
+  const existing = config.profiles[profileName];
   if (!existing?.api_key) {
-    throw new ValidationError(`Profile "${input.name}" not found or missing api_key.`, {
-      details: { profile: input.name, available: Object.keys(config.profiles) },
+    throw new ValidationError(`Profile "${profileName}" not found or missing api_key.`, {
+      details: { profile: profileName, available: Object.keys(config.profiles) },
     });
   }
   const next: RawProfile = {
@@ -223,7 +224,7 @@ export function saveWmsProfile(input: SaveWmsProfileInput, configPath: string = 
   };
   if (input.stocktakeUserId === null) delete next.stocktake_user_id;
   else if (input.stocktakeUserId !== undefined) next.stocktake_user_id = input.stocktakeUserId;
-  config.profiles[input.name] = next;
+  config.profiles[profileName] = next;
   writeConfig(config, configPath);
 }
 
