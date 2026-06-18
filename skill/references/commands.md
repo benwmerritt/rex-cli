@@ -57,6 +57,18 @@ Show the config with API keys redacted
 
 Create a starter config.toml if none exists
 
+### `rex config wms <profile>`
+
+Store WMS SOAP credentials for stocktake workflows
+
+| Flag | Description |
+| --- | --- |
+| `--client-id <guid>` | Retail Express WMS client GUID (or REX_WMS_CLIENT_ID) |
+| `--username <name>` | Retail Express WMS username (or REX_WMS_USERNAME) |
+| `--password <password>` | Retail Express WMS password (or REX_WMS_PASSWORD) |
+| `--url <url>` | Retail Express WMS service URL (or REX_WMS_URL) |
+| `--stocktake-user-id <id>` | Retail Express user id for stocktake submissions |
+
 ### `rex api <method> <path>`
 
 Raw passthrough to the Retail Express API (escape hatch for un-wrapped endpoints)
@@ -368,4 +380,34 @@ Create stockadjustmentreasons
 | `--file <path>` | JSON array/object of records to write |
 | `--stdin` | read NDJSON records from stdin |
 | `--description-file <path>` | read long_description from a file |
+
+### `rex stocktake begin`
+
+Start a local stocktake session for one outlet
+
+| Flag | Description |
+| --- | --- |
+| `--outlet <id-or-name>` | Retail Express outlet id or name for this stocktake |
+| `--user-id <id>` | Retail Express user id for WMS stocktake submission |
+| `--force` | replace an existing active stocktake session |
+
+### `rex stocktake count <query>`
+
+Stage an absolute counted quantity for a product
+
+### `rex stocktake review`
+
+Review the active stocktake session
+
+### `rex stocktake remove <line-id>`
+
+Remove a staged stocktake line by line id or product id
+
+### `rex stocktake submit`
+
+Submit the active session to WMS CreateStocktake
+
+### `rex stocktake abort`
+
+Discard the active local stocktake session
 

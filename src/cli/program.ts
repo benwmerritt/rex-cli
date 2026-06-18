@@ -4,6 +4,7 @@ import { registerAuth } from "../commands/auth";
 import { registerConfig } from "../commands/config";
 import { registerProduct } from "../commands/products";
 import { registerResources } from "../commands/resources";
+import { registerStocktake } from "../commands/stocktake";
 import { asInt, type ContextDeps } from "./context";
 
 /**
@@ -33,6 +34,7 @@ export function buildProgram(deps: ContextDeps = {}): Command {
   registerApi(program, deps);
   registerProduct(program, deps);
   registerResources(program, deps);
+  registerStocktake(program, deps);
 
   return program;
 }

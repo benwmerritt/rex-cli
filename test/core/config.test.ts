@@ -8,7 +8,9 @@ import {
   loadConfig,
   parseConfig,
   resolveProfile,
+  resolveStocktakeUserId,
   saveProfile,
+  saveWmsProfile,
   setDefaultProfile,
 } from "../../src/core/config";
 import { ValidationError } from "../../src/core/errors";
@@ -49,14 +51,54 @@ describe("parseConfig", () => {
 describe("resolveProfile precedence", () => {
   beforeEach(() => writeFileSync(configPath, SAMPLE));
 
-  it("REX_API_KEY env overrides everything (ephemeral profile + defaults)", () => {
-    const p = resolveProfile({ env: { REX_API_KEY: "ENVKEY" }, configPath, cwd: dir });
-    expect(p).toEqual({
-      name: "env",
+  it("REX_API_KEY env overrides everything with a key-derived ephemeral profile", () => {
+    const p = resolveProfile({
+      env: {
+        REX_API_KEY: "ENVKEY",
+        REX_WMS_CLIENT_ID: "CID",
+        REX_WMS_USERNAME: "wsi",
+        REX_WMS_PASSWORD: "secret",
+        REX_WMS_URL: "https://wms",
+        REX_STOCKTAKE_USER_ID: "4",
+      },
+      configPath,
+      cwd: dir,
+    });
+    expect(p).toMatchObject({
       apiKey: "ENVKEY",
       baseUrl: DEFAULT_BASE_URL,
       version: DEFAULT_VERSION,
+      wmsClientId: "CID",
+      wmsUsername: "wsi",
+      wmsPassword: "secret",
+      wmsUrl: "https://wms",
     });
+    expect(resolveStocktakeUserId(p)).toBe(4);
+    expect(p.name).toMatch(/^env-[a-f0-9]{12}$/);
+    expect(p.name).not.toContain("ENVKEY");
+
+    const sameKey = resolveProfile({ env: { REX_API_KEY: "ENVKEY" }, configPath, cwd: dir });
+    const otherKey = resolveProfile({ env: { REX_API_KEY: "OTHER_ENVKEY" }, configPath, cwd: dir });
+    expect(sameKey.name).toBe(p.name);
+    expect(otherKey.name).not.toBe(p.name);
+  });
+
+  it("REX_PROFILE is namespaced by API key when REX_API_KEY env auth is used", () => {
+    const p = resolveProfile({
+      env: { REX_API_KEY: "ENVKEY", REX_PROFILE: "tenant-a" },
+      configPath,
+      cwd: dir,
+    });
+    const sameProfileOtherKey = resolveProfile({
+      env: { REX_API_KEY: "OTHER_ENVKEY", REX_PROFILE: "tenant-a" },
+      configPath,
+      cwd: dir,
+    });
+    expect(p.name).toMatch(/^tenant-a-env-[a-f0-9]{12}$/);
+    expect(p.name).not.toContain("ENVKEY");
+    expect(sameProfileOtherKey.name).toMatch(/^tenant-a-env-[a-f0-9]{12}$/);
+    expect(sameProfileOtherKey.name).not.toBe(p.name);
+    expect(p.apiKey).toBe("ENVKEY");
   });
 
   it("--profile flag selects a named profile from config", () => {
@@ -95,6 +137,42 @@ describe("resolveProfile precedence", () => {
       ValidationError,
     );
   });
+
+  it("defers stocktake user id env validation until stocktake code needs it", () => {
+    const p = resolveProfile({
+      env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "-1" },
+      configPath,
+      cwd: dir,
+    });
+    expect(p.apiKey).toBe("ENVKEY");
+    expect(() => resolveStocktakeUserId(p)).toThrow("REX_STOCKTAKE_USER_ID must be a positive integer.");
+  });
+
+  it("reports zero stocktake user id env values as positive integers", () => {
+    const p = resolveProfile({
+      env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "0" },
+      configPath,
+      cwd: dir,
+    });
+    expect(() => resolveStocktakeUserId(p)).toThrow("REX_STOCKTAKE_USER_ID must be a positive integer.");
+  });
+
+  it("reports stocktake user id env values above the safe integer limit as out of range", () => {
+    const p = resolveProfile({
+      env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "9007199254740992" },
+      configPath,
+      cwd: dir,
+    });
+    expect(() => resolveStocktakeUserId(p)).toThrow(
+      "REX_STOCKTAKE_USER_ID is out of range; must not exceed Number.MAX_SAFE_INTEGER.",
+    );
+  });
+
+  it("reports stored stocktake user id values as positive integers", () => {
+    writeFileSync(configPath, '[profiles.a]\napi_key = "K1"\nstocktake_user_id = 0\n');
+    const p = resolveProfile({ profileFlag: "a", env: {}, configPath, cwd: dir });
+    expect(() => resolveStocktakeUserId(p)).toThrow("stocktake_user_id must be a positive integer.");
+  });
 });
 
 describe("saveProfile / setDefaultProfile", () => {
@@ -109,6 +187,20 @@ describe("saveProfile / setDefaultProfile", () => {
     expect(mode).toBe(0o600);
   });
 
+  it("accepts safe profile names with allowed characters", () => {
+    saveProfile({ name: "tenant-a.env_1", apiKey: "K1" }, configPath);
+    const cfg = loadConfig(configPath);
+    expect(cfg.defaultProfile).toBe("tenant-a.env_1");
+    expect(cfg.profiles["tenant-a.env_1"]?.api_key).toBe("K1");
+  });
+
+  it("rejects unsafe profile names before saving", () => {
+    for (const profile of ["", ".", "..", "../tenant", "tenant/one", "tenant\\one", "tenant..one", "tenant one", "tenant:one"]) {
+      expect(() => saveProfile({ name: profile, apiKey: "K1" }, configPath)).toThrow(ValidationError);
+      expect(loadConfig(configPath)).toEqual({ profiles: {} });
+    }
+  });
+
   it("does not clobber the default when adding a second profile", () => {
     saveProfile({ name: "a", apiKey: "K1" }, configPath);
     saveProfile({ name: "b", apiKey: "K2" }, configPath);
@@ -121,5 +213,165 @@ describe("saveProfile / setDefaultProfile", () => {
     setDefaultProfile("b", configPath);
     expect(loadConfig(configPath).defaultProfile).toBe("b");
     expect(() => setDefaultProfile("ghost", configPath)).toThrow(ValidationError);
+    expect(() => setDefaultProfile("../tenant", configPath)).toThrow(ValidationError);
+  });
+
+  it("adds WMS SOAP credentials to an existing REST profile", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID",
+        username: "wsi",
+        password: "secret",
+        url: "https://wms/service.asmx?wsdl",
+        stocktakeUserId: 4,
+      },
+      configPath,
+    );
+    const p = resolveProfile({ profileFlag: "a", env: {}, configPath, cwd: dir });
+    expect(p).toMatchObject({
+      apiKey: "K1",
+      wmsClientId: "CID",
+      wmsUsername: "wsi",
+      wmsPassword: "secret",
+      wmsUrl: "https://wms/service.asmx?wsdl",
+      stocktakeUserId: 4,
+    });
+  });
+
+  it("rejects WMS SOAP credentials for an unknown profile", () => {
+    expect(() =>
+      saveWmsProfile(
+        {
+          name: "ghost",
+          clientId: "CID",
+          username: "wsi",
+          password: "secret",
+          url: "https://wms/service.asmx?wsdl",
+        },
+        configPath,
+      ),
+    ).toThrow(ValidationError);
+  });
+
+  it("rejects WMS SOAP credentials for unsafe profile names", () => {
+    expect(() =>
+      saveWmsProfile(
+        {
+          name: "../tenant",
+          clientId: "CID",
+          username: "wsi",
+          password: "secret",
+          url: "https://wms/service.asmx?wsdl",
+        },
+        configPath,
+      ),
+    ).toThrow(ValidationError);
+  });
+
+  it("clears only the WMS stocktake user id when saveWmsProfile receives null", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID",
+        username: "wsi",
+        password: "secret",
+        url: "https://wms/service.asmx?wsdl",
+        stocktakeUserId: 4,
+      },
+      configPath,
+    );
+
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID2",
+        username: "wsi2",
+        password: "secret2",
+        url: "https://wms2/service.asmx?wsdl",
+        stocktakeUserId: null,
+      },
+      configPath,
+    );
+
+    expect(loadConfig(configPath).profiles.a).toMatchObject({
+      api_key: "K1",
+      wms_client_id: "CID2",
+      wms_username: "wsi2",
+      wms_password: "secret2",
+      wms_url: "https://wms2/service.asmx?wsdl",
+    });
+    expect(loadConfig(configPath).profiles.a?.stocktake_user_id).toBeUndefined();
+  });
+
+  it("rejects invalid WMS stocktake user ids before saving", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+
+    for (const stocktakeUserId of [0, -1, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() =>
+        saveWmsProfile(
+          {
+            name: "a",
+            clientId: "CID",
+            username: "wsi",
+            password: "secret",
+            url: "https://wms/service.asmx?wsdl",
+            stocktakeUserId,
+          },
+          configPath,
+        ),
+      ).toThrow(ValidationError);
+    }
+  });
+
+  it("preserves WMS SOAP credentials when saving the same API key", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID",
+        username: "wsi",
+        password: "secret",
+        url: "https://wms/service.asmx?wsdl",
+        stocktakeUserId: 4,
+      },
+      configPath,
+    );
+
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+
+    expect(loadConfig(configPath).profiles.a).toMatchObject({
+      api_key: "K1",
+      wms_client_id: "CID",
+      wms_username: "wsi",
+      wms_password: "secret",
+      wms_url: "https://wms/service.asmx?wsdl",
+      stocktake_user_id: 4,
+    });
+  });
+
+  it("clears WMS SOAP credentials when saving a different API key on the same profile", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID",
+        username: "wsi",
+        password: "secret",
+        url: "https://wms/service.asmx?wsdl",
+        stocktakeUserId: 4,
+      },
+      configPath,
+    );
+
+    saveProfile({ name: "a", apiKey: "K2" }, configPath);
+
+    expect(loadConfig(configPath).profiles.a).toEqual({
+      api_key: "K2",
+      base_url: DEFAULT_BASE_URL,
+      version: DEFAULT_VERSION,
+    });
   });
 });

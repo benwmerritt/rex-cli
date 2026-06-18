@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
+import { Command } from "commander";
+import { run, type PositionalArgs } from "../../src/cli/context";
 import { buildProgram } from "../../src/cli/program";
 import type { AuthProvider } from "../../src/core/auth";
 import { RexClient } from "../../src/core/client";
-import { Output, type Writer } from "../../src/core/output";
+import { Output } from "../../src/core/output";
 import type { Transport } from "../../src/core/transport";
+import { capture } from "../helpers/capture";
 
 const auth: AuthProvider = { ensureToken: async () => "T", invalidate: () => {} };
 
@@ -20,12 +23,6 @@ function fakeClient(handler: (method: string, url: string) => unknown) {
     transport,
     sleep: async () => {},
   });
-}
-
-function capture() {
-  const chunks: string[] = [];
-  const writer: Writer = { write: (s) => void chunks.push(s) };
-  return { writer, text: () => chunks.join("") };
 }
 
 async function runCli(argv: string[], handler: (method: string, url: string) => unknown) {
@@ -63,6 +60,66 @@ describe("rex product (golden)", () => {
       dryRun: true,
       diff: { short_description: "New" },
     });
+  });
+
+  it("update accepts an id from --set when optional [id] is omitted", async () => {
+    let seenUrl = "";
+    const { out } = await runCli(
+      ["product", "update", "--set", "id=5", "--set", "short_description=New", "--dry-run"],
+      (method, url) => {
+        if (method !== "GET") throw new Error(`unexpected ${method} in dry-run`);
+        seenUrl = url;
+        return { id: 5, short_description: "Old", brand: "Acme" };
+      },
+    );
+    expect(seenUrl).toBe("https://x/v2.1/products/5");
+    expect(JSON.parse(out)).toMatchObject({
+      id: 5,
+      action: "update",
+      changed: ["short_description"],
+      dryRun: true,
+    });
+  });
+
+  it('update treats an omitted optional [id] as undefined, not "undefined"', async () => {
+    let seenArgs: PositionalArgs | undefined;
+    const out = capture();
+    const err = capture();
+    const program = new Command();
+    program.exitOverride();
+    program
+      .command("product")
+      .command("update [id]")
+      .option("--set <kv...>")
+      .option("--dry-run")
+      .action(
+        run({ env: { REX_API_KEY: "K" }, output: new Output({ mode: "json" }, out.writer, err.writer) }, (_ctx, _opts, args) => {
+          seenArgs = args;
+        }),
+      );
+
+    await program.parseAsync(["node", "rex", "product", "update", "--set", "short_description=New", "--dry-run"]);
+
+    expect(seenArgs?.[0]).toBeUndefined();
+    expect(seenArgs?.[0]).not.toBe("undefined");
+  });
+
+  it("update rejects missing ids when optional [id] is omitted and --set has no id", async () => {
+    const prevExit = process.exitCode;
+    let calls = 0;
+
+    const { out, err } = await runCli(["product", "update", "--set", "short_description=New", "--dry-run"], () => {
+      calls += 1;
+      throw new Error("handler should not be called without an id");
+    });
+
+    expect(calls).toBe(0);
+    expect(out).toBe("");
+    expect(JSON.parse(err).error).toMatchObject({
+      code: "validation",
+      message: "Provide an <id>, --file, or --stdin.",
+    });
+    process.exitCode = prevExit;
   });
 
   it("update gates a price change without --allow-price (exit 8)", async () => {
