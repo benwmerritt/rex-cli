@@ -64,7 +64,9 @@ rex stocktake submit
 
 After the dry run, inspect the JSON before submitting: confirm the submitted
 line count, each product id and variance value, and any zero-variance products
-that were skipped from submission but remain visible in review/audit context.
+that were skipped from the WMS submission. Zero-variance lines remain visible in
+local review/audit context only, so the operator can confirm they were counted
+without sending no-op lines to Retail Express.
 
 If a product name is ambiguous, stop and ask the operator to choose from the
 JSON `matches`. Prefer product ids or barcodes when scanning. Never use direct

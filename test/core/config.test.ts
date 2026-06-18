@@ -213,6 +213,7 @@ describe("saveProfile / setDefaultProfile", () => {
     setDefaultProfile("b", configPath);
     expect(loadConfig(configPath).defaultProfile).toBe("b");
     expect(() => setDefaultProfile("ghost", configPath)).toThrow(ValidationError);
+    expect(() => setDefaultProfile("../tenant", configPath)).toThrow(ValidationError);
   });
 
   it("adds WMS SOAP credentials to an existing REST profile", () => {

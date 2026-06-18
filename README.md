@@ -100,7 +100,8 @@ export REX_WMS_URL=<wms-service-url>
 rex config wms default --stocktake-user-id <retail-express-user-id>
 ```
 
-The same values can be passed as flags when appropriate:
+The same values can be passed as flags when appropriate. Flags override
+environment variables when both are present:
 
 ```bash
 rex config wms default \
@@ -124,11 +125,11 @@ rex stocktake submit
 
 `rex config wms default` stores WMS credentials on the `default` profile.
 Stocktake sessions are also stored per profile, so use the same `--profile` or
-`REX_PROFILE` from `begin` through `submit`. Profiles should be tenant-scoped:
-do not reuse the same profile for different Retail Express tenants, because
-stale stocktake, session, or WMS state can carry forward. Do not rely on
-switching `REX_API_KEY` alone as the operator-facing tenant boundary; explicit
-profiles avoid the security risk of shared or confused stocktake sessions.
+`REX_PROFILE` from `begin` through `submit`. **Critical:** profiles must be
+tenant-scoped. Do not reuse the same profile for different Retail Express
+tenants, and do not rely on changing `REX_API_KEY` alone as the tenant boundary.
+WMS credentials persist in profiles across API key changes, so a reused profile
+can submit stocktakes to the wrong WMS tenant.
 
 `count` updates the staged line if the same product is counted again. Only
 non-zero variances are submitted; zero-variance lines are kept in the review but

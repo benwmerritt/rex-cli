@@ -235,13 +235,14 @@ export function saveWmsProfile(input: SaveWmsProfileInput, configPath: string = 
 
 /** Set the default profile (errors if the profile isn't present). */
 export function setDefaultProfile(name: string, configPath: string = configFile()): void {
+  const profileName = validateSafeProfileName(name);
   const config = loadConfig(configPath);
-  if (!config.profiles[name]) {
-    throw new ValidationError(`Profile "${name}" not found.`, {
+  if (!config.profiles[profileName]) {
+    throw new ValidationError(`Profile "${profileName}" not found.`, {
       details: { available: Object.keys(config.profiles) },
     });
   }
-  config.defaultProfile = name;
+  config.defaultProfile = profileName;
   writeConfig(config, configPath);
 }
 

@@ -63,10 +63,10 @@ Store WMS SOAP credentials for stocktake workflows
 
 | Flag | Description |
 | --- | --- |
-| `--client-id <guid>` | Retail Express WMS client GUID |
-| `--username <name>` | Retail Express WMS username |
-| `--password <password>` | Retail Express WMS password |
-| `--url <url>` | Retail Express WMS service URL |
+| `--client-id <guid>` | Retail Express WMS client GUID (or REX_WMS_CLIENT_ID) |
+| `--username <name>` | Retail Express WMS username (or REX_WMS_USERNAME) |
+| `--password <password>` | Retail Express WMS password (or REX_WMS_PASSWORD) |
+| `--url <url>` | Retail Express WMS service URL (or REX_WMS_URL) |
 | `--stocktake-user-id <id>` | Retail Express user id for stocktake submissions |
 
 ### `rex api <method> <path>`

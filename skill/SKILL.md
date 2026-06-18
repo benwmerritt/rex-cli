@@ -44,6 +44,8 @@ Use when the human is physically counting products and wants the agent to enter
 counts. Set the outlet once, then treat the last token of each `count` command
 as the absolute counted quantity. Before starting, WMS credentials must be
 configured on the active profile with `rex config wms <profile>`.
+Profile names may contain only letters, numbers, dot, underscore, and hyphen.
+Invalid characters cause `Unsafe profile name for filesystem path` errors.
 
 ```bash
 rex stocktake begin --outlet "Gepps X"          # user id can come from config
