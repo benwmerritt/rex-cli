@@ -1,0 +1,6 @@
+# Bun configuration for rex-cli
+# Tests live in test/ and alongside source as *.test.ts; bun test discovers both.
+
+[test]
+# Fail fast is left off so the full suite reports; flip on locally when iterating.
+# coverage = true
