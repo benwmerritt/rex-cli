@@ -1,4 +1,4 @@
-import { PRICE_FIELDS } from "./fields";
+import { PRICE_FIELDS, topLevelField } from "./fields";
 
 export interface DiffResult {
   /** Minimal payload: only the keys whose value differs from current. */
@@ -22,6 +22,7 @@ export interface DiffResult {
 export function computeDiff(
   current: Record<string, unknown> | undefined,
   desired: Record<string, unknown>,
+  priceFields: ReadonlySet<string> = PRICE_FIELDS,
 ): DiffResult {
   const changed: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(desired)) {
@@ -30,7 +31,7 @@ export function computeDiff(
     }
   }
   const changedKeys = Object.keys(changed);
-  const touchedPriceFields = changedKeys.filter((k) => PRICE_FIELDS.has(k));
+  const touchedPriceFields = changedKeys.filter((k) => priceFields.has(topLevelField(k)));
   return { changed, changedKeys, touchedPriceFields };
 }
 
