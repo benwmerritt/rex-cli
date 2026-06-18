@@ -53,11 +53,12 @@ async function runCli(
   argv: string[],
   handler: (method: string, url: string) => unknown,
   wms?: WmsClientLike,
+  env: NodeJS.ProcessEnv = { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "4" },
 ) {
   const out = capture();
   const err = capture();
   const program = buildProgram({
-    env: { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "4" },
+    env,
     clientFactory: () => fakeClient(handler),
     wmsClientFactory: () =>
       wms ?? {
@@ -126,9 +127,37 @@ describe("rex stocktake", () => {
     process.exitCode = 0;
   });
 
+  it("uses explicit --user-id without validating an invalid stocktake env fallback", async () => {
+    const started = await runCli(
+      ["stocktake", "begin", "--outlet", "3", "--user-id", "4"],
+      retailExpressFixture,
+      undefined,
+      { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "-1" },
+    );
+
+    expect(JSON.parse(started.out)).toMatchObject({ ok: true, session: { outletId: 3, userId: 4 } });
+    expect(started.err).toBe("");
+  });
+
+  it("reports invalid stocktake env fallback when begin needs it", async () => {
+    const started = await runCli(
+      ["stocktake", "begin", "--outlet", "3"],
+      retailExpressFixture,
+      undefined,
+      { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "-1" },
+    );
+
+    expect(started.out).toBe("");
+    expect(JSON.parse(started.err).error).toMatchObject({
+      code: "validation",
+      message: "REX_STOCKTAKE_USER_ID must be a non-negative integer.",
+    });
+  });
+
   it("clears the session after WMS success even if audit logging fails", async () => {
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
     await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+    // Creating a directory where audit.jsonl should be forces appendAudit to fail.
     mkdirSync(join(stateDir, "rex", "audit.jsonl"), { recursive: true });
 
     let submissions = 0;

@@ -14,6 +14,7 @@ import {
   maybeLoadSession,
   parseCountArgs,
   removeLine,
+  resolveOutlet,
   resolveProduct,
   sessionPath,
   summarizeSession,
@@ -175,6 +176,50 @@ describe("stocktake resource helpers", () => {
     expect(sessionPath(firstTenant.name)).not.toBe(sessionPath(secondTenant.name));
   });
 
+  it("isolates explicit env-profile stocktake sessions by API key", () => {
+    const firstTenant = resolveProfile({ env: { REX_API_KEY: "TENANT_A_KEY", REX_PROFILE: "tenant" } });
+    const secondTenant = resolveProfile({ env: { REX_API_KEY: "TENANT_B_KEY", REX_PROFILE: "tenant" } });
+
+    expect(firstTenant.name).toMatch(/^tenant-env-[a-f0-9]{12}$/);
+    expect(secondTenant.name).toMatch(/^tenant-env-[a-f0-9]{12}$/);
+    expect(firstTenant.name).not.toBe(secondTenant.name);
+    expect(sessionPath(firstTenant.name)).not.toBe(sessionPath(secondTenant.name));
+  });
+
+  it("resolveOutlet searches later outlet pages", async () => {
+    const firstPage = Array.from({ length: 250 }, (_, i) => ({
+      id: 1000 + i,
+      name: `Outlet ${i}`,
+    }));
+    const { client, calls } = makeClient((_method, url) => {
+      const params = new URL(url).searchParams;
+      expect(params.get("page_size")).toBe("250");
+      if (params.get("page_number") === "1") return listResponse(firstPage, 1, 251, 250);
+      return listResponse([{ id: 3, name: "Mile End" }], 2, 251, 250);
+    });
+
+    const result = await resolveOutlet(client, "Mile End");
+
+    expect(result).toEqual({ id: 3, name: "Mile End" });
+    expect(calls.map((call) => new URL(call.url).searchParams.get("page_number"))).toEqual(["1", "2"]);
+  });
+
+  it("resolveOutlet prefers exact outlet names before substring matches", async () => {
+    const { client } = makeClient(() =>
+      listResponse(
+        [
+          { id: 4, name: "Mile End South" },
+          { id: 3, name: "Mile End" },
+        ],
+        1,
+        2,
+        250,
+      ),
+    );
+
+    await expect(resolveOutlet(client, "Mile End")).resolves.toEqual({ id: 3, name: "Mile End" });
+  });
+
   it("fetchOutletInventory searches later inventory pages for the outlet row", async () => {
     const firstPage = Array.from({ length: 250 }, (_, i) => ({
       product_id: 124001,
@@ -219,6 +264,27 @@ describe("stocktake resource helpers", () => {
     expect(result).toMatchObject({ id: 999, description: "Scanned Product" });
     expect(calls).toHaveLength(1);
     expect(new URL(calls[0]!.url).searchParams.get("search")).toBe("124001");
+  });
+
+  it("resolveProduct matches numeric manufacturer SKU before product-id lookup", async () => {
+    const { client, calls } = makeClient((_method, url) => {
+      if (url.includes("/products?")) {
+        const params = new URL(url).searchParams;
+        expect(params.get("page_size")).toBe("250");
+        return listResponse(
+          [{ id: 998, manufacturer_sku: "124001", short_description: "Manufacturer SKU Product" }],
+          1,
+          1,
+          250,
+        );
+      }
+      throw new Error(`unexpected product-id lookup: ${url}`);
+    });
+
+    const result = await resolveProduct(client, "124001");
+
+    expect(result).toMatchObject({ id: 998, description: "Manufacturer SKU Product" });
+    expect(calls).toHaveLength(1);
   });
 
   it("resolveProduct falls back to product-id lookup when a numeric scan has no exact barcode or SKU match", async () => {

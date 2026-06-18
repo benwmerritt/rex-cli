@@ -8,6 +8,7 @@ import {
   loadConfig,
   parseConfig,
   resolveProfile,
+  resolveStocktakeUserId,
   saveProfile,
   saveWmsProfile,
   setDefaultProfile,
@@ -71,8 +72,8 @@ describe("resolveProfile precedence", () => {
       wmsUsername: "wsi",
       wmsPassword: "secret",
       wmsUrl: "https://wms",
-      stocktakeUserId: 4,
     });
+    expect(resolveStocktakeUserId(p)).toBe(4);
     expect(p.name).toMatch(/^env-[a-f0-9]{12}$/);
     expect(p.name).not.toContain("ENVKEY");
 
@@ -82,13 +83,21 @@ describe("resolveProfile precedence", () => {
     expect(otherKey.name).not.toBe(p.name);
   });
 
-  it("REX_PROFILE keeps explicit profile naming for REX_API_KEY env auth", () => {
+  it("REX_PROFILE is namespaced by API key when REX_API_KEY env auth is used", () => {
     const p = resolveProfile({
       env: { REX_API_KEY: "ENVKEY", REX_PROFILE: "tenant-a" },
       configPath,
       cwd: dir,
     });
-    expect(p.name).toBe("tenant-a");
+    const sameProfileOtherKey = resolveProfile({
+      env: { REX_API_KEY: "OTHER_ENVKEY", REX_PROFILE: "tenant-a" },
+      configPath,
+      cwd: dir,
+    });
+    expect(p.name).toMatch(/^tenant-a-env-[a-f0-9]{12}$/);
+    expect(p.name).not.toContain("ENVKEY");
+    expect(sameProfileOtherKey.name).toMatch(/^tenant-a-env-[a-f0-9]{12}$/);
+    expect(sameProfileOtherKey.name).not.toBe(p.name);
     expect(p.apiKey).toBe("ENVKEY");
   });
 
@@ -129,24 +138,25 @@ describe("resolveProfile precedence", () => {
     );
   });
 
-  it("reports stocktake user id env values as non-negative integers", () => {
-    expect(() =>
-      resolveProfile({
-        env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "-1" },
-        configPath,
-        cwd: dir,
-      }),
-    ).toThrow("REX_STOCKTAKE_USER_ID must be a non-negative integer.");
+  it("defers stocktake user id env validation until stocktake code needs it", () => {
+    const p = resolveProfile({
+      env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "-1" },
+      configPath,
+      cwd: dir,
+    });
+    expect(p.apiKey).toBe("ENVKEY");
+    expect(() => resolveStocktakeUserId(p)).toThrow("REX_STOCKTAKE_USER_ID must be a non-negative integer.");
   });
 
   it("reports stocktake user id env values above the safe integer limit as out of range", () => {
-    expect(() =>
-      resolveProfile({
-        env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "9007199254740992" },
-        configPath,
-        cwd: dir,
-      }),
-    ).toThrow("REX_STOCKTAKE_USER_ID is out of range; must not exceed Number.MAX_SAFE_INTEGER.");
+    const p = resolveProfile({
+      env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "9007199254740992" },
+      configPath,
+      cwd: dir,
+    });
+    expect(() => resolveStocktakeUserId(p)).toThrow(
+      "REX_STOCKTAKE_USER_ID is out of range; must not exceed Number.MAX_SAFE_INTEGER.",
+    );
   });
 });
 

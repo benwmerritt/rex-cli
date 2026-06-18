@@ -180,11 +180,32 @@ export function summarizeSession(session: StocktakeSession): Record<string, unkn
 
 export async function resolveOutlet(client: RexClient, value: string): Promise<OutletRef> {
   if (/^\d+$/.test(value)) return { id: Number(value) };
-  const env = await listResource<Record<string, unknown>>(client, "outlets", { pageSize: 250 });
+  const pageSize = 250;
+  let page = 1;
+  let fetched = 0;
+  const outlets: Array<{ id?: number; name?: string }> = [];
+
+  for (;;) {
+    const res = await listResource<Record<string, unknown>>(client, "outlets", { page, pageSize });
+    outlets.push(
+      ...res.nodes.map((outlet) => ({
+        id: numberField(outlet, ["id", "outlet_id", "WHID", "whid"]),
+        name: nameField(outlet),
+      })),
+    );
+    fetched += res.nodes.length;
+    if (res.nodes.length === 0 || fetched >= res.pageInfo.total) break;
+    page += 1;
+  }
+
   const needle = value.trim().toLowerCase();
-  const matches = env.nodes
-    .map((outlet) => ({ outlet, id: numberField(outlet, ["id", "outlet_id", "WHID", "whid"]), name: nameField(outlet) }))
-    .filter((outlet) => outlet.id !== undefined && outlet.name?.toLowerCase().includes(needle));
+  const exactMatches = outlets.filter(
+    (outlet) => outlet.id !== undefined && outlet.name?.toLowerCase() === needle,
+  );
+  const matches =
+    exactMatches.length > 0
+      ? exactMatches
+      : outlets.filter((outlet) => outlet.id !== undefined && outlet.name?.toLowerCase().includes(needle));
   if (matches.length === 1) return { id: matches[0]!.id!, name: matches[0]!.name };
   if (matches.length > 1) {
     throw new ValidationError(`Outlet "${value}" is ambiguous.`, {
@@ -276,7 +297,19 @@ export function parseCountArgs(args: string[]): { query: string; counted: number
 function exactProductMatch(res: ListEnvelope<Product>, query: string): Product | undefined {
   const needle = query.trim().toLowerCase();
   return res.nodes.find((product) =>
-    [product.id, product.sku, product.SKU, product.barcode, product.Barcode, product.supplier_sku, product.supplierSku, product.SupplierSKU]
+    [
+      product.id,
+      product.sku,
+      product.SKU,
+      product.barcode,
+      product.Barcode,
+      product.supplier_sku,
+      product.supplierSku,
+      product.SupplierSKU,
+      product.manufacturer_sku,
+      product.manufacturerSku,
+      product.ManufacturerSKU,
+    ]
       .filter((v) => v !== undefined && v !== null)
       .some((v) => String(v).toLowerCase() === needle),
   );
@@ -285,7 +318,18 @@ function exactProductMatch(res: ListEnvelope<Product>, query: string): Product |
 function exactScanMatches(res: ListEnvelope<Product>, query: string): Product[] {
   const needle = query.trim().toLowerCase();
   return res.nodes.filter((product) =>
-    [product.sku, product.SKU, product.barcode, product.Barcode, product.supplier_sku, product.supplierSku, product.SupplierSKU]
+    [
+      product.sku,
+      product.SKU,
+      product.barcode,
+      product.Barcode,
+      product.supplier_sku,
+      product.supplierSku,
+      product.SupplierSKU,
+      product.manufacturer_sku,
+      product.manufacturerSku,
+      product.ManufacturerSKU,
+    ]
       .filter((v) => v !== undefined && v !== null)
       .some((v) => String(v).toLowerCase() === needle),
   );

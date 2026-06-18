@@ -19,6 +19,7 @@ export interface Profile {
   wmsPassword?: string;
   wmsUrl?: string;
   stocktakeUserId?: number;
+  stocktakeUserIdEnv?: string;
 }
 
 /** A profile as stored in config.toml (fields optional; defaults applied on resolve). */
@@ -78,9 +79,9 @@ export interface ResolveOptions {
   configPath?: string;
 }
 
-function envProfileName(apiKey: string): string {
+function envProfileName(apiKey: string, profileName?: string): string {
   const digest = createHash("sha256").update(apiKey).digest("hex").slice(0, 12);
-  return `env-${digest}`;
+  return profileName ? `${profileName}-env-${digest}` : `env-${digest}`;
 }
 
 /**
@@ -91,12 +92,12 @@ function envProfileName(apiKey: string): string {
  */
 export function resolveProfile(opts: ResolveOptions = {}): Profile {
   const env = opts.env ?? process.env;
-  const envStocktakeUserId = parseOptionalInt(env.REX_STOCKTAKE_USER_ID, "REX_STOCKTAKE_USER_ID");
 
   const envKey = env.REX_API_KEY?.trim();
   if (envKey) {
+    const envProfile = env.REX_PROFILE?.trim() || undefined;
     return {
-      name: env.REX_PROFILE?.trim() || envProfileName(envKey),
+      name: envProfileName(envKey, envProfile),
       apiKey: envKey,
       baseUrl: env.REX_BASE_URL?.trim() || DEFAULT_BASE_URL,
       version: env.REX_VERSION?.trim() || DEFAULT_VERSION,
@@ -104,7 +105,7 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
       wmsUsername: env.REX_WMS_USERNAME?.trim() || undefined,
       wmsPassword: env.REX_WMS_PASSWORD?.trim() || undefined,
       wmsUrl: env.REX_WMS_URL?.trim() || undefined,
-      stocktakeUserId: envStocktakeUserId,
+      stocktakeUserIdEnv: env.REX_STOCKTAKE_USER_ID,
     };
   }
 
@@ -138,8 +139,13 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
     wmsUsername: raw.wms_username?.trim() || env.REX_WMS_USERNAME?.trim() || undefined,
     wmsPassword: raw.wms_password?.trim() || env.REX_WMS_PASSWORD?.trim() || undefined,
     wmsUrl: raw.wms_url?.trim() || env.REX_WMS_URL?.trim() || undefined,
-    stocktakeUserId: raw.stocktake_user_id ?? envStocktakeUserId,
+    stocktakeUserId: raw.stocktake_user_id,
+    stocktakeUserIdEnv: raw.stocktake_user_id === undefined ? env.REX_STOCKTAKE_USER_ID : undefined,
   };
+}
+
+export function resolveStocktakeUserId(profile: Profile): number | undefined {
+  return profile.stocktakeUserId ?? parseOptionalInt(profile.stocktakeUserIdEnv, "REX_STOCKTAKE_USER_ID");
 }
 
 /** Write config atomically with 0600 perms (temp file + rename). */

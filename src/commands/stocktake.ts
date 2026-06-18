@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { type ContextDeps, run } from "../cli/context";
 import { appendAudit } from "../core/audit";
+import { resolveStocktakeUserId } from "../core/config";
 import { ValidationError } from "../core/errors";
 import {
   clearSession,
@@ -45,7 +46,8 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
             details: { hint: "Run `rex stocktake review`, `rex stocktake submit`, or `rex stocktake abort`." },
           });
         }
-        const userId = intOption(opts.userId, "--user-id") ?? profile.stocktakeUserId;
+        const explicitUserId = intOption(opts.userId, "--user-id");
+        const userId = explicitUserId ?? resolveStocktakeUserId(profile);
         if (!userId) {
           throw new ValidationError("Stocktake user id is required.", {
             details: { hint: "Use --user-id or configure stocktake_user_id with `rex config wms`." },
