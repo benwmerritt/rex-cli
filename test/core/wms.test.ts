@@ -91,6 +91,26 @@ describe("WMS stocktake SOAP", () => {
     }
   });
 
+  it("reports SOAP faults as API errors with fault details", () => {
+    try {
+      parseCreateStocktakeResponse(
+        `<soap:Envelope><soap:Body>
+          <soap:Fault>
+            <faultcode>soap:Server</faultcode>
+            <faultstring>Stocktake service failed &amp; needs review</faultstring>
+          </soap:Fault>
+        </soap:Body></soap:Envelope>`,
+        500,
+      );
+      throw new Error("Expected parseCreateStocktakeResponse to throw.");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(500);
+      expect((err as ApiError).message).toBe("Retail Express WMS SOAP fault: Stocktake service failed & needs review");
+      expect((err as ApiError).details).toEqual({ fault: "Stocktake service failed & needs review" });
+    }
+  });
+
   it("posts to the .asmx URL rather than the WSDL URL", async () => {
     let seenUrl = "";
     let seenAction = "";
@@ -109,6 +129,22 @@ describe("WMS stocktake SOAP", () => {
     expect(seenAction).toBe('"http://retailexpress.com.au/CreateStocktake"');
     expect(seenSignal).toBeInstanceOf(AbortSignal);
     expect(seenSignal?.aborted).toBe(false);
+  });
+
+  it("reports non-OK CreateStocktake HTTP responses with truncated response details", async () => {
+    const responseBody = `WMS failure: ${"x".repeat(1100)}`;
+    const transport: Transport = async () => new Response(responseBody, { status: 500 });
+    const client = new WmsClient({ config, transport });
+
+    try {
+      await client.createStocktake({ outletId: 3, userId: 4, items: [{ productId: 1, variance: 1 }] });
+      throw new Error("Expected createStocktake to throw.");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(500);
+      expect((err as ApiError).message).toBe("Retail Express WMS returned HTTP 500.");
+      expect((err as ApiError).details).toEqual({ body: responseBody.slice(0, 1000) });
+    }
   });
 
   it("times out CreateStocktake requests with an injectable scheduler", async () => {

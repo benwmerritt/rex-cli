@@ -7,6 +7,9 @@ submits a Retail Express stocktake awaiting manual authorisation.
 
 ## One-Time Setup
 
+WMS configuration is a mandatory prerequisite for daily counting. Configure it
+on the profile you will use before running `rex stocktake begin`.
+
 Get these WMS details from Retail Express support or the account admin:
 
 - WMS client GUID
@@ -25,12 +28,6 @@ rex config wms default \
   --url <wms-service-url> \
   --stocktake-user-id <rex-user-id>
 ```
-
-If WMS submit fails after a clean dry run, check the WMS setup first: the Web
-Services Interface licence may not be enabled, credentials may be invalid, the
-WMS URL may be unreachable, or the required licence may be missing. A dry run
-only verifies local product, inventory, and variance calculation; WMS licence,
-credential, and URL problems appear on `rex stocktake submit`.
 
 ## Daily Counting
 
@@ -53,6 +50,17 @@ rex stocktake count weber q 2200 3
 
 The last value is the counted quantity. If the same product is counted again,
 the staged line is updated.
+
+If a product name is ambiguous, use the product id or barcode instead:
+
+```json
+{"error":{"code":"validation","message":"Product \"weber q\" is ambiguous.","details":{"matches":[...]}}}
+```
+
+```bash
+rex stocktake count 124001 3
+rex stocktake count 9312924000000 3
+```
 
 ## Review And Dry Run
 
@@ -81,6 +89,14 @@ rex stocktake submit
 
 This creates a Retail Express stocktake in awaiting-authorisation state. It does
 not replace the manual Retail Express approval step.
+
+### Troubleshooting
+
+If WMS submit fails after a clean dry run, check the WMS setup first: the Web
+Services Interface licence may not be enabled, credentials may be invalid, the
+WMS URL may be unreachable, or the required licence may be missing. A dry run
+only verifies local product, inventory, and variance calculation; WMS licence,
+credential, and URL problems appear on `rex stocktake submit`.
 
 ## Recovery
 

@@ -395,4 +395,49 @@ describe("stocktake resource helpers", () => {
 
     await expect(resolveProduct(client, "123456")).rejects.toThrow('Product "123456" is ambiguous.');
   });
+
+  it("resolveProduct finds exact non-numeric SKU matches on later pages", async () => {
+    const firstPage = Array.from({ length: 250 }, (_, i) => ({
+      id: 2000 + i,
+      sku: `OTHER-${i}`,
+      short_description: `Other Product ${i}`,
+    }));
+    const { client, calls } = makeClient((_method, url) => {
+      if (url.includes("/products?")) {
+        const params = new URL(url).searchParams;
+        expect(params.get("page_size")).toBe("250");
+        if (params.get("page_number") === "1") return listResponse(firstPage, 1, 251, 250);
+        return listResponse([{ id: 999, sku: "WQ2200", short_description: "Weber Q 2200" }], 2, 251, 250);
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const result = await resolveProduct(client, "WQ2200");
+
+    expect(result).toMatchObject({ id: 999, description: "Weber Q 2200", sku: "WQ2200" });
+    expect(calls.map((call) => new URL(call.url).searchParams.get("page_number"))).toEqual(["1", "2"]);
+  });
+
+  it("resolveProduct reports ambiguous non-numeric exact matches across pages", async () => {
+    const firstPage = [
+      { id: 998, sku: "WQ2200", short_description: "Weber Q 2200 First" },
+      ...Array.from({ length: 249 }, (_, i) => ({
+        id: 2000 + i,
+        sku: `OTHER-${i}`,
+        short_description: `Other Product ${i}`,
+      })),
+    ];
+    const { client, calls } = makeClient((_method, url) => {
+      if (url.includes("/products?")) {
+        const params = new URL(url).searchParams;
+        expect(params.get("page_size")).toBe("250");
+        if (params.get("page_number") === "1") return listResponse(firstPage, 1, 251, 250);
+        return listResponse([{ id: 999, sku: "WQ2200", short_description: "Weber Q 2200 Second" }], 2, 251, 250);
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    await expect(resolveProduct(client, "WQ2200")).rejects.toThrow('Product "WQ2200" is ambiguous.');
+    expect(calls.map((call) => new URL(call.url).searchParams.get("page_number"))).toEqual(["1", "2"]);
+  });
 });

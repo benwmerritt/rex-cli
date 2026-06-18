@@ -38,6 +38,8 @@ describe("profile-backed paths", () => {
   it("rejects unsafe profile names before constructing filenames", () => {
     for (const profile of ["", ".", "..", "../tenant", "tenant/one", "tenant\\one", "tenant..one", "tenant one", "tenant:one"]) {
       expect(() => tokenCacheFile(profile)).toThrow(ValidationError);
+      expect(() => rateLimitFile(profile)).toThrow(ValidationError);
+      expect(() => stocktakeSessionFile(profile)).toThrow(ValidationError);
     }
   });
 });

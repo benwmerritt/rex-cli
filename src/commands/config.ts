@@ -4,7 +4,7 @@ import { type ContextDeps, run } from "../cli/context";
 import { loadConfig, saveWmsProfile, writeConfig } from "../core/config";
 import { ValidationError } from "../core/errors";
 import { configFile } from "../core/paths";
-import { parsePositiveInt } from "../core/validation";
+import { parsePositiveInt, validateSafeProfileName } from "../core/validation";
 
 function redact(key: string | undefined): string {
   if (!key) return "";
@@ -74,12 +74,13 @@ export function registerConfig(program: Command, deps: ContextDeps): void {
     .option("--stocktake-user-id <id>", "Retail Express user id for stocktake submissions")
     .action(
       run(deps, (ctx, opts, args) => {
-        const profileName = args[0]?.trim();
-        if (!profileName) {
+        const rawProfileName = args[0]?.trim();
+        if (!rawProfileName) {
           throw new ValidationError("WMS profile name is required.", {
             details: { hint: "Use `rex config wms <profile> ...`." },
           });
         }
+        const profileName = validateSafeProfileName(rawProfileName);
         const env = deps.env ?? process.env;
         const clientId = optionOrEnv(opts.clientId, env.REX_WMS_CLIENT_ID);
         const username = optionOrEnv(opts.username, env.REX_WMS_USERNAME);

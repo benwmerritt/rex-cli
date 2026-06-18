@@ -13,7 +13,29 @@ export function parsePositiveInt(value: unknown, paramName: string): number {
   return parsed;
 }
 
-export function parseOptionalPositiveInt(value: string | undefined, paramName: string): number | undefined {
-  if (value === undefined || value.trim() === "") return undefined;
-  return parsePositiveInt(value, paramName);
+export function parseOptionalPositiveInt(value: unknown, paramName: string): number | undefined {
+  if (value === undefined) return undefined;
+  const text = String(value).trim();
+  if (text === "") return undefined;
+  return parsePositiveInt(text, paramName);
+}
+
+export function validateSafeProfileName(profile: string): string {
+  if (
+    profile.length === 0 ||
+    profile === "." ||
+    profile === ".." ||
+    profile.includes("..") ||
+    profile.includes("/") ||
+    profile.includes("\\") ||
+    !/^[A-Za-z0-9._-]+$/.test(profile)
+  ) {
+    throw new ValidationError("Unsafe profile name for filesystem path.", {
+      details: {
+        profile,
+        allowed: "letters, numbers, dot, underscore, and hyphen",
+      },
+    });
+  }
+  return profile;
 }

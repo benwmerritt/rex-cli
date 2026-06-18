@@ -62,6 +62,10 @@ rex --dry-run stocktake submit
 rex stocktake submit
 ```
 
+After the dry run, inspect the JSON before submitting: confirm the submitted
+line count, each product id and variance value, and any zero-variance products
+that were skipped from submission but remain visible in review/audit context.
+
 If a product name is ambiguous, stop and ask the operator to choose from the
 JSON `matches`. Prefer product ids or barcodes when scanning. Never use direct
 stock adjustments for this workflow unless explicitly requested.

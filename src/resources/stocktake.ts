@@ -237,9 +237,7 @@ async function getOutletById(client: RexClient, value: string): Promise<OutletRe
 
 export async function resolveProduct(client: RexClient, query: string): Promise<ResolvedProduct> {
   const isNumericQuery = /^\d+$/.test(query);
-  const res = isNumericQuery
-    ? await listAllProductSearchResults(client, query)
-    : await listProducts(client, { pageSize: 10, query: { search: query } });
+  const res = await listAllProductSearchResults(client, query);
 
   if (isNumericQuery) {
     const scanMatches = exactScanMatches(res, query);
@@ -254,8 +252,9 @@ export async function resolveProduct(client: RexClient, query: string): Promise<
     }
   }
 
-  const exact = exactProductMatch(res, query);
-  if (exact) return normalizeProduct(exact);
+  const exactMatches = exactProductMatches(res, query);
+  if (exactMatches.length === 1) return normalizeProduct(exactMatches[0]!);
+  if (exactMatches.length > 1) throw ambiguousProduct(query, exactMatches);
   if (res.nodes.length === 1) return normalizeProduct(res.nodes[0]!);
   if (res.nodes.length > 1) throw ambiguousProduct(query, res.nodes);
   throw new ValidationError(`Product not found: ${query}`);
@@ -326,9 +325,9 @@ export function parseCountArgs(args: string[]): { query: string; counted: number
   return { query, counted };
 }
 
-function exactProductMatch(res: ListEnvelope<Product>, query: string): Product | undefined {
+function exactProductMatches(res: ListEnvelope<Product>, query: string): Product[] {
   const needle = query.trim().toLowerCase();
-  return res.nodes.find((product) =>
+  return res.nodes.filter((product) =>
     [
       product.id,
       product.sku,

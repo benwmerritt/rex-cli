@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ValidationError } from "./errors";
+import { validateSafeProfileName } from "./validation";
 
 /**
  * XDG-aware base directories for rex. These are functions (not constants) so
@@ -32,33 +32,13 @@ export function configFile(): string {
 }
 
 export function tokenCacheFile(profile: string): string {
-  return join(cacheDir(), `${profileFileStem(profile)}.token.json`);
+  return join(cacheDir(), `${validateSafeProfileName(profile)}.token.json`);
 }
 
 export function rateLimitFile(profile: string): string {
-  return join(cacheDir(), `${profileFileStem(profile)}.ratelimit.json`);
+  return join(cacheDir(), `${validateSafeProfileName(profile)}.ratelimit.json`);
 }
 
 export function stocktakeSessionFile(profile: string): string {
-  return join(stateDir(), `stocktake.${profileFileStem(profile)}.json`);
-}
-
-function profileFileStem(profile: string): string {
-  if (
-    profile.length === 0 ||
-    profile === "." ||
-    profile === ".." ||
-    profile.includes("..") ||
-    profile.includes("/") ||
-    profile.includes("\\") ||
-    !/^[A-Za-z0-9._-]+$/.test(profile)
-  ) {
-    throw new ValidationError("Unsafe profile name for filesystem path.", {
-      details: {
-        profile,
-        allowed: "letters, numbers, dot, underscore, and hyphen",
-      },
-    });
-  }
-  return profile;
+  return join(stateDir(), `stocktake.${validateSafeProfileName(profile)}.json`);
 }

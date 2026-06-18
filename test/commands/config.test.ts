@@ -98,6 +98,34 @@ describe("rex config wms", () => {
     process.exitCode = 0;
   });
 
+  it("rejects unsafe WMS profile names before saving", async () => {
+    for (const profile of [".", "..", "../tenant", "tenant/one", "tenant\\one", "tenant..one", "tenant one", "tenant:one"]) {
+      const result = await runCli([
+        "config",
+        "wms",
+        profile,
+        "--client-id",
+        "CID",
+        "--username",
+        "wsi",
+        "--password",
+        "secret",
+        "--url",
+        "https://wms/service.asmx?wsdl",
+      ]);
+
+      expect(JSON.parse(result.err).error).toMatchObject({
+        code: "validation",
+        message: "Unsafe profile name for filesystem path.",
+        details: {
+          profile,
+          allowed: "letters, numbers, dot, underscore, and hyphen",
+        },
+      });
+      process.exitCode = 0;
+    }
+  });
+
   it("reports stocktake user id as a positive integer", async () => {
     saveProfile({ name: "default", apiKey: "K" });
 
