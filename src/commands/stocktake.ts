@@ -15,6 +15,7 @@ import {
   resolveOutlet,
   resolveProduct,
   saveSession,
+  sessionStorageKey,
   summarizeSession,
   upsertLine,
   type ResolvedProduct,
@@ -33,7 +34,8 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .action(
       run(deps, async (ctx, opts) => {
         const profile = ctx.profile();
-        if (maybeLoadSession(profile.name) && !opts.force) {
+        const storageKey = sessionStorageKey(profile);
+        if (maybeLoadSession(storageKey) && !opts.force) {
           throw new ValidationError("A stocktake session is already active.", {
             details: { hint: "Run `rex stocktake review`, `rex stocktake submit`, or `rex stocktake abort`." },
           });
@@ -47,7 +49,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         }
         const outlet = await resolveOutlet(ctx.client(), opts.outlet as string);
         const session = createSession({ profile: profile.name, outlet, userId });
-        saveSession(session);
+        saveSession(session, storageKey);
         ctx.output.result({ ok: true, session: summarizeSession(session) });
       }),
     );
@@ -58,11 +60,13 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .action(
       run(deps, async (ctx, _opts, args) => {
         const profile = ctx.profile();
-        const session = loadSession(profile.name);
+        const storageKey = sessionStorageKey(profile);
+        const session = loadSession(storageKey);
         const { query, counted } = parseCountArgs(args.filter((arg): arg is string => arg !== undefined));
         const product = await resolveProduct(ctx.client(), query);
         const inventory = await fetchOutletInventory(ctx.client(), product.id, session.outletId);
         const result = upsertAndSave(session, {
+          storageKey,
           query,
           product,
           counted,
@@ -83,7 +87,8 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .description("Review the active stocktake session")
     .action(
       run(deps, (ctx) => {
-        ctx.output.result(summarizeSession(loadSession(ctx.profile().name)));
+        const profile = ctx.profile();
+        ctx.output.result(summarizeSession(loadSession(sessionStorageKey(profile))));
       }),
     );
 
@@ -94,9 +99,11 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
       run(deps, (ctx, _opts, args) => {
         const lineId = args[0];
         if (!lineId) throw new ValidationError("Stocktake line id is required.");
-        const session = loadSession(ctx.profile().name);
+        const profile = ctx.profile();
+        const storageKey = sessionStorageKey(profile);
+        const session = loadSession(storageKey);
         const result = removeLine(session, lineId);
-        saveSession(result.session);
+        saveSession(result.session, storageKey);
         ctx.output.result({ ok: true, removed: result.line, summary: summarizeSession(result.session) });
       }),
     );
@@ -107,7 +114,8 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .action(
       run(deps, async (ctx) => {
         const profile = ctx.profile();
-        const session = loadSession(profile.name);
+        const storageKey = sessionStorageKey(profile);
+        const session = loadSession(storageKey);
         const submitLines = session.lines.filter((line) => line.variance !== 0);
         const payload = {
           outletId: session.outletId,
@@ -129,7 +137,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         }
 
         if (submitLines.length === 0) {
-          clearSession(profile.name);
+          clearSession(storageKey);
           ctx.output.result({
             ok: true,
             submitted: false,
@@ -146,7 +154,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         } catch (err) {
           throw submitFailureError(err);
         }
-        clearSession(profile.name);
+        clearSession(storageKey);
         let auditWarning: { warning: string; error: string } | undefined;
         try {
           appendAudit({
@@ -188,8 +196,9 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .action(
       run(deps, (ctx) => {
         const profile = ctx.profile();
-        const existed = Boolean(maybeLoadSession(profile.name));
-        clearSession(profile.name);
+        const storageKey = sessionStorageKey(profile);
+        const existed = Boolean(maybeLoadSession(storageKey));
+        clearSession(storageKey);
         ctx.output.result({ ok: true, aborted: existed });
       }),
     );
@@ -236,6 +245,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function upsertAndSave(
   session: StocktakeSession,
   input: {
+    storageKey: string;
     query: string;
     product: ResolvedProduct;
     counted: number;
@@ -243,6 +253,6 @@ function upsertAndSave(
   },
 ): ReturnType<typeof upsertLine> {
   const result = upsertLine(session, input);
-  saveSession(result.session);
+  saveSession(result.session, input.storageKey);
   return result;
 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RexClient } from "../core/client";
@@ -5,7 +6,7 @@ import { NotFoundError, ValidationError } from "../core/errors";
 import { stocktakeSessionFile } from "../core/paths";
 import type { ListEnvelope } from "../core/paginate";
 import { getProduct, listProducts, type Product } from "./products";
-import { listResource } from "./crud";
+import { getResource, listResource } from "./crud";
 
 export interface StocktakeSession {
   id: string;
@@ -53,6 +54,11 @@ export function sessionPath(profile: string): string {
   return stocktakeSessionFile(profile);
 }
 
+export function sessionStorageKey(profile: { name: string; apiKey: string }): string {
+  const digest = createHash("sha256").update(profile.apiKey).digest("hex").slice(0, 12);
+  return `${profile.name}-api-${digest}`;
+}
+
 export function loadSession(profile: string): StocktakeSession {
   const path = sessionPath(profile);
   if (!existsSync(path)) {
@@ -80,8 +86,8 @@ export function maybeLoadSession(profile: string): StocktakeSession | undefined 
   }
 }
 
-export function saveSession(session: StocktakeSession): void {
-  const path = sessionPath(session.profile);
+export function saveSession(session: StocktakeSession, storageKey: string = session.profile): void {
+  const path = sessionPath(storageKey);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(session, null, 2), { mode: 0o600 });
@@ -179,7 +185,7 @@ export function summarizeSession(session: StocktakeSession): Record<string, unkn
 }
 
 export async function resolveOutlet(client: RexClient, value: string): Promise<OutletRef> {
-  if (/^\d+$/.test(value)) return { id: Number(value) };
+  if (/^\d+$/.test(value)) return getOutletById(client, value);
   const pageSize = 250;
   let page = 1;
   let fetched = 0;
@@ -213,6 +219,20 @@ export async function resolveOutlet(client: RexClient, value: string): Promise<O
     });
   }
   throw new ValidationError(`Outlet not found: ${value}`);
+}
+
+async function getOutletById(client: RexClient, value: string): Promise<OutletRef> {
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new ValidationError("Outlet id must be a positive integer.");
+  }
+  try {
+    const outlet = await getResource<Record<string, unknown>>(client, "outlets", id);
+    return { id, name: nameField(outlet) };
+  } catch (err) {
+    if (err instanceof NotFoundError) throw new ValidationError(`Outlet not found: ${value}`, { cause: err });
+    throw err;
+  }
 }
 
 export async function resolveProduct(client: RexClient, query: string): Promise<ResolvedProduct> {

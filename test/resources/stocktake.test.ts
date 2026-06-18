@@ -220,6 +220,25 @@ describe("stocktake resource helpers", () => {
     await expect(resolveOutlet(client, "Mile End")).resolves.toEqual({ id: 3, name: "Mile End" });
   });
 
+  it("resolveOutlet validates numeric outlet ids and returns the outlet name", async () => {
+    const { client, calls } = makeClient((_method, url) => {
+      if (url.endsWith("/outlets/3")) return { id: 3, name: "Mile End" };
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    await expect(resolveOutlet(client, "3")).resolves.toEqual({ id: 3, name: "Mile End" });
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual(["/v2.1/outlets/3"]);
+  });
+
+  it("resolveOutlet rejects numeric outlet ids that do not exist", async () => {
+    const { client } = makeClient((_method, url) => {
+      if (url.endsWith("/outlets/999")) return new Response("{}", { status: 404 });
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    await expect(resolveOutlet(client, "999")).rejects.toThrow("Outlet not found: 999");
+  });
+
   it("fetchOutletInventory searches later inventory pages for the outlet row", async () => {
     const firstPage = Array.from({ length: 250 }, (_, i) => ({
       product_id: 124001,

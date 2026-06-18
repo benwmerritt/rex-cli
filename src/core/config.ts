@@ -174,7 +174,7 @@ export interface SaveWmsProfileInput {
   username: string;
   password: string;
   url: string;
-  stocktakeUserId?: number;
+  stocktakeUserId?: number | null;
 }
 
 /** Upsert a profile into config.toml. The first profile saved becomes the default. */
@@ -213,14 +213,16 @@ export function saveWmsProfile(input: SaveWmsProfileInput, configPath: string = 
       details: { profile: input.name, available: Object.keys(config.profiles) },
     });
   }
-  config.profiles[input.name] = {
+  const next: RawProfile = {
     ...existing,
     wms_client_id: input.clientId,
     wms_username: input.username,
     wms_password: input.password,
     wms_url: input.url,
-    ...(input.stocktakeUserId !== undefined ? { stocktake_user_id: input.stocktakeUserId } : {}),
   };
+  if (input.stocktakeUserId === null) delete next.stocktake_user_id;
+  else if (input.stocktakeUserId !== undefined) next.stocktake_user_id = input.stocktakeUserId;
+  config.profiles[input.name] = next;
   writeConfig(config, configPath);
 }
 

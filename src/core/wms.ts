@@ -326,6 +326,16 @@ function escapeXml(value: string): string {
 }
 
 function decodeXml(value: string): string {
+  let decoded = value;
+  for (let i = 0; i < 5; i += 1) {
+    const next = decodeXmlOnce(decoded);
+    if (next === decoded) return decoded;
+    decoded = next;
+  }
+  return decoded;
+}
+
+function decodeXmlOnce(value: string): string {
   return value
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")

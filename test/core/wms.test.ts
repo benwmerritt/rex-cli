@@ -42,6 +42,15 @@ describe("WMS stocktake SOAP", () => {
     expect(res).toEqual({ ok: true, result: "Success" });
   });
 
+  it("parses double-encoded XML entities returned by CreateStocktake", () => {
+    const res = parseCreateStocktakeResponse(`<soap:Envelope><soap:Body>
+      <CreateStocktakeResponse xmlns="http://retailexpress.com.au/">
+        <CreateStocktakeResult>&amp;lt;Response&amp;gt;&amp;lt;Result&amp;gt;Success&amp;lt;/Result&amp;gt;&amp;lt;Message&amp;gt;Created &amp;amp;amp; checked&amp;lt;/Message&amp;gt;&amp;lt;/Response&amp;gt;</CreateStocktakeResult>
+      </CreateStocktakeResponse>
+    </soap:Body></soap:Envelope>`);
+    expect(res).toEqual({ ok: true, result: "Success", message: "Created & checked" });
+  });
+
   it("reports a non-success CreateStocktake result as an API error", () => {
     try {
       parseCreateStocktakeResponse(

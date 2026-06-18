@@ -219,6 +219,42 @@ describe("saveProfile / setDefaultProfile", () => {
     });
   });
 
+  it("clears only the WMS stocktake user id when saveWmsProfile receives null", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID",
+        username: "wsi",
+        password: "secret",
+        url: "https://wms/service.asmx?wsdl",
+        stocktakeUserId: 4,
+      },
+      configPath,
+    );
+
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID2",
+        username: "wsi2",
+        password: "secret2",
+        url: "https://wms2/service.asmx?wsdl",
+        stocktakeUserId: null,
+      },
+      configPath,
+    );
+
+    expect(loadConfig(configPath).profiles.a).toMatchObject({
+      api_key: "K1",
+      wms_client_id: "CID2",
+      wms_username: "wsi2",
+      wms_password: "secret2",
+      wms_url: "https://wms2/service.asmx?wsdl",
+    });
+    expect(loadConfig(configPath).profiles.a?.stocktake_user_id).toBeUndefined();
+  });
+
   it("preserves WMS SOAP credentials when saving the same API key", () => {
     saveProfile({ name: "a", apiKey: "K1" }, configPath);
     saveWmsProfile(

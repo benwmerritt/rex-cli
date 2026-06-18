@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { buildProgram } from "../../src/cli/program";
 import type { AuthProvider } from "../../src/core/auth";
 import { RexClient } from "../../src/core/client";
+import { saveProfile } from "../../src/core/config";
 import { ApiError } from "../../src/core/errors";
 import { Output } from "../../src/core/output";
 import type { Transport } from "../../src/core/transport";
@@ -15,18 +16,26 @@ const auth: AuthProvider = { ensureToken: async () => "T", invalidate: () => {} 
 
 let stateDir: string;
 let previousStateHome: string | undefined;
+let configHome: string;
+let previousConfigHome: string | undefined;
 
 beforeEach(() => {
   previousStateHome = process.env.XDG_STATE_HOME;
+  previousConfigHome = process.env.XDG_CONFIG_HOME;
   stateDir = mkdtempSync(join(tmpdir(), "rex-stocktake-"));
+  configHome = mkdtempSync(join(tmpdir(), "rex-stocktake-config-"));
   process.env.XDG_STATE_HOME = stateDir;
+  process.env.XDG_CONFIG_HOME = configHome;
   process.exitCode = 0;
 });
 
 afterEach(() => {
   if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
   else process.env.XDG_STATE_HOME = previousStateHome;
+  if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = previousConfigHome;
   rmSync(stateDir, { recursive: true, force: true });
+  rmSync(configHome, { recursive: true, force: true });
   process.exitCode = 0;
 });
 
@@ -68,6 +77,7 @@ async function runCli(
 }
 
 function retailExpressFixture(method: string, url: string): unknown {
+  if (url.endsWith("/outlets/3")) return { id: 3, name: "Mile End" };
   if (url.includes("/products?")) {
     return { data: [], page_number: 1, page_size: 10, total_records: 0 };
   }
@@ -133,6 +143,26 @@ describe("rex stocktake", () => {
 
     expect(JSON.parse(started.out)).toMatchObject({ ok: true, session: { outletId: 3, userId: 4 } });
     expect(started.err).toBe("");
+  });
+
+  it("does not load a stocktake session from the same config profile after the API key changes", async () => {
+    saveProfile({ name: "tenant", apiKey: "K1" });
+    const env = { REX_PROFILE: "tenant", REX_STOCKTAKE_USER_ID: "4" };
+
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture, undefined, env);
+    saveProfile({ name: "tenant", apiKey: "K2" });
+
+    const wrongTenant = await runCli(["stocktake", "review"], retailExpressFixture, undefined, env);
+    expect(wrongTenant.out).toBe("");
+    expect(JSON.parse(wrongTenant.err).error).toMatchObject({
+      code: "validation",
+      message: "No active stocktake session.",
+    });
+
+    process.exitCode = 0;
+    saveProfile({ name: "tenant", apiKey: "K1" });
+    const originalTenant = await runCli(["stocktake", "review"], retailExpressFixture, undefined, env);
+    expect(JSON.parse(originalTenant.out)).toMatchObject({ profile: "tenant", outletId: 3, userId: 4 });
   });
 
   it("keeps the session and explains retry after WMS submit failure", async () => {
