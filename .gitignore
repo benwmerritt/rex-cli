@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# Compiled single-file binary (produced by `bun run compile`)
+/rex
+
+# Local profile selection / any stray credential or token caches
+.rex.toml
+*.token.json
+*.tgz
+
+coverage/
+.DS_Store
+*.log
