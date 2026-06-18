@@ -84,6 +84,17 @@ awaiting manual authorisation.
 Configure WMS once on an existing REST profile:
 
 ```bash
+export REX_WMS_CLIENT_ID=<guid>
+export REX_WMS_USERNAME=<wms-user>
+export REX_WMS_PASSWORD=<wms-password>
+export REX_WMS_URL=<wms-service-url>
+
+rex config wms default --stocktake-user-id <retail-express-user-id>
+```
+
+The same values can be passed as flags when appropriate:
+
+```bash
 rex config wms default \
   --client-id <guid> \
   --username <wms-user> \

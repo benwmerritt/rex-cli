@@ -108,7 +108,9 @@ export class RunContext {
   }
 }
 
-export type Handler = (ctx: RunContext, opts: GlobalOptions, args: string[]) => Promise<void> | void;
+export type PositionalArgs = Array<string | undefined>;
+
+export type Handler = (ctx: RunContext, opts: GlobalOptions, args: PositionalArgs) => Promise<void> | void;
 
 /**
  * Wrap a command handler: build the context from merged global+local options,
@@ -121,7 +123,7 @@ export function run(deps: ContextDeps, handler: Handler) {
     const positional = cmdArgs
       .slice(0, Math.max(0, cmdArgs.length - 2))
       .flatMap((arg) => (Array.isArray(arg) ? arg : [arg]))
-      .map(String);
+      .map((arg) => (arg === undefined ? undefined : String(arg)));
     const opts = command.optsWithGlobals() as GlobalOptions;
     const ctx = new RunContext(opts, deps);
     try {

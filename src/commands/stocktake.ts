@@ -65,7 +65,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
       run(deps, async (ctx, _opts, args) => {
         const profile = ctx.profile();
         const session = loadSession(profile.name);
-        const { query, counted } = parseCountArgs(args);
+        const { query, counted } = parseCountArgs(args.filter((arg): arg is string => arg !== undefined));
         const product = await resolveProduct(ctx.client(), query);
         const inventory = await fetchOutletInventory(ctx.client(), product.id, session.outletId);
         const result = upsertAndSave(session, {
@@ -99,9 +99,9 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .action(
       run(deps, (ctx, _opts, args) => {
         const session = loadSession(ctx.profile().name);
-        const removed = removeLine(session, args[0]!);
-        saveSession(session);
-        ctx.output.result({ ok: true, removed, summary: summarizeSession(session) });
+        const result = removeLine(session, args[0]!);
+        saveSession(result.session);
+        ctx.output.result({ ok: true, removed: result.line, summary: summarizeSession(result.session) });
       }),
     );
 
@@ -145,6 +145,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         }
 
         const result = await ctx.wmsClient().createStocktake(payload);
+        clearSession(profile.name);
         appendAudit({
           ts: new Date().toISOString(),
           profile: profile.name,
@@ -159,7 +160,6 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
           })),
           after: payload,
         });
-        clearSession(profile.name);
         ctx.output.result({
           ok: true,
           submitted: true,

@@ -1,7 +1,20 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import type { AuthProvider } from "../../src/core/auth";
+import { RexClient } from "../../src/core/client";
+import { ValidationError } from "../../src/core/errors";
+import type { Transport } from "../../src/core/transport";
 import {
   createSession,
+  fetchOutletInventory,
+  loadSession,
+  maybeLoadSession,
   parseCountArgs,
+  removeLine,
+  resolveProduct,
+  sessionPath,
   summarizeSession,
   upsertLine,
   type ResolvedProduct,
@@ -13,6 +26,55 @@ const product: ResolvedProduct = {
   sku: "WQ",
   raw: { id: 124001, short_description: "Weber Q" },
 };
+
+const auth: AuthProvider = { ensureToken: async () => "T", invalidate: () => {} };
+
+let stateHome: string;
+let previousStateHome: string | undefined;
+
+beforeEach(() => {
+  previousStateHome = process.env.XDG_STATE_HOME;
+  stateHome = mkdtempSync(join(tmpdir(), "rex-stocktake-resource-"));
+  process.env.XDG_STATE_HOME = stateHome;
+});
+
+afterEach(() => {
+  if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
+  else process.env.XDG_STATE_HOME = previousStateHome;
+  rmSync(stateHome, { recursive: true, force: true });
+});
+
+function listResponse(data: unknown[], page: number, total: number, pageSize: number): Record<string, unknown> {
+  return {
+    data,
+    page_number: page,
+    page_size: pageSize,
+    total_records: total,
+  };
+}
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+}
+
+function makeClient(handler: (method: string, url: string) => unknown | Response) {
+  const calls: Array<{ method: string; url: string }> = [];
+  const transport: Transport = async (url, init) => {
+    const method = init.method ?? "GET";
+    calls.push({ method, url });
+    const result = handler(method, url);
+    return result instanceof Response ? result : json(result);
+  };
+  const client = new RexClient({
+    baseUrl: "https://x",
+    version: "v2.1",
+    apiKey: "K",
+    auth,
+    transport,
+    sleep: async () => {},
+  });
+  return { client, calls };
+}
 
 describe("stocktake resource helpers", () => {
   it("parses natural count args by treating the last token as the count", () => {
@@ -48,5 +110,135 @@ describe("stocktake resource helpers", () => {
     expect(session.lines).toHaveLength(1);
     expect(session.lines[0]).toMatchObject({ counted: 8, variance: 0 });
     expect(summarizeSession(session)).toMatchObject({ totalLines: 1, submitLines: 0, zeroVarianceLines: 1 });
+  });
+
+  it("removes a line with an injectable timestamp and returns the mutated session", () => {
+    const session = createSession({
+      profile: "test",
+      outlet: { id: 3 },
+      userId: 4,
+      now: () => "2026-06-18T00:00:00.000Z",
+    });
+    upsertLine(session, {
+      query: "weber q",
+      product,
+      counted: 6,
+      currentStock: 8,
+      now: () => "2026-06-18T00:01:00.000Z",
+    });
+
+    const result = removeLine(session, "124001", { now: () => "2026-06-18T00:02:00.000Z" });
+
+    expect(result.session).toBe(session);
+    expect(result.line).toMatchObject({ productId: 124001, counted: 6, currentStock: 8, variance: -2 });
+    expect(session.updatedAt).toBe("2026-06-18T00:02:00.000Z");
+    expect(session.lines).toHaveLength(0);
+  });
+
+  it("maybeLoadSession returns undefined for a corrupted session file", () => {
+    const path = sessionPath("test");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "{not json");
+
+    expect(maybeLoadSession("test")).toBeUndefined();
+  });
+
+  it("loadSession reports a corrupted session file with recovery guidance", () => {
+    const path = sessionPath("test");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "{not json");
+
+    try {
+      loadSession("test");
+      throw new Error("Expected loadSession to throw.");
+    } catch (err) {
+      if (!(err instanceof ValidationError)) throw err;
+      expect(err.message).toBe("Stocktake session file is corrupted.");
+      expect(err.details).toEqual({
+        path,
+        hint: "Run `rex stocktake abort` to clear it, then start over.",
+      });
+      expect(err.cause).toBeInstanceOf(SyntaxError);
+    }
+  });
+
+  it("fetchOutletInventory searches later inventory pages for the outlet row", async () => {
+    const firstPage = Array.from({ length: 250 }, (_, i) => ({
+      product_id: 124001,
+      outlet_id: 1000 + i,
+      stock_on_hand: 0,
+    }));
+    const { client, calls } = makeClient((_method, url) => {
+      const params = new URL(url).searchParams;
+      expect(params.get("product_id")).toBe("124001");
+      if (params.get("page_number") === "1") return listResponse(firstPage, 1, 251, 250);
+      return listResponse([{ product_id: 124001, outlet_id: 3, stock_on_hand: "8" }], 2, 251, 250);
+    });
+
+    const result = await fetchOutletInventory(client, 124001, 3);
+
+    expect(result).toMatchObject({ outletId: 3, currentStock: 8 });
+    expect(calls.map((call) => new URL(call.url).searchParams.get("page_number"))).toEqual(["1", "2"]);
+  });
+
+  it("fetchOutletInventory does not use available stock as stock on hand", async () => {
+    const { client } = makeClient(() =>
+      listResponse([{ product_id: 124001, outlet_id: 3, available: 6 }], 1, 1, 250),
+    );
+
+    await expect(fetchOutletInventory(client, 124001, 3)).rejects.toThrow(
+      "Inventory row for product 124001 did not include stock on hand.",
+    );
+  });
+
+  it("resolveProduct prefers exact numeric barcode and SKU matches before product-id lookup", async () => {
+    const { client, calls } = makeClient((_method, url) => {
+      if (url.includes("/products?")) {
+        return listResponse([{ id: 999, barcode: "124001", short_description: "Scanned Product" }], 1, 1, 10);
+      }
+      throw new Error(`unexpected product-id lookup: ${url}`);
+    });
+
+    const result = await resolveProduct(client, "124001");
+
+    expect(result).toMatchObject({ id: 999, description: "Scanned Product" });
+    expect(calls).toHaveLength(1);
+    expect(new URL(calls[0]!.url).searchParams.get("search")).toBe("124001");
+  });
+
+  it("resolveProduct falls back to product-id lookup when a numeric scan has no exact barcode or SKU match", async () => {
+    const { client, calls } = makeClient((_method, url) => {
+      if (url.includes("/products?")) {
+        return listResponse([{ id: 999, barcode: "OTHER", short_description: "Other Product" }], 1, 1, 10);
+      }
+      if (url.endsWith("/products/124001")) {
+        return { id: 124001, short_description: "Product Id Match", sku: "WQ2200" };
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const result = await resolveProduct(client, "124001");
+
+    expect(result).toMatchObject({ id: 124001, description: "Product Id Match", sku: "WQ2200" });
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual(["/v2.1/products", "/v2.1/products/124001"]);
+  });
+
+  it("resolveProduct reports ambiguous exact numeric scan matches", async () => {
+    const { client } = makeClient((_method, url) => {
+      if (url.includes("/products?")) {
+        return listResponse(
+          [
+            { id: 1, barcode: "123456", short_description: "Barcode Match" },
+            { id: 2, sku: "123456", short_description: "SKU Match" },
+          ],
+          1,
+          2,
+          10,
+        );
+      }
+      throw new Error(`unexpected product-id lookup: ${url}`);
+    });
+
+    await expect(resolveProduct(client, "123456")).rejects.toThrow('Product "123456" is ambiguous.');
   });
 });

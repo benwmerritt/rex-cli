@@ -65,6 +65,25 @@ describe("rex product (golden)", () => {
     });
   });
 
+  it("update accepts an id from --set when optional [id] is omitted", async () => {
+    let seenUrl = "";
+    const { out } = await runCli(
+      ["product", "update", "--set", "id=5", "--set", "short_description=New", "--dry-run"],
+      (method, url) => {
+        if (method !== "GET") throw new Error(`unexpected ${method} in dry-run`);
+        seenUrl = url;
+        return { id: 5, short_description: "Old", brand: "Acme" };
+      },
+    );
+    expect(seenUrl).toBe("https://x/v2.1/products/5");
+    expect(JSON.parse(out)).toMatchObject({
+      id: 5,
+      action: "update",
+      changed: ["short_description"],
+      dryRun: true,
+    });
+  });
+
   it("update gates a price change without --allow-price (exit 8)", async () => {
     const prevExit = process.exitCode;
     const { out, err } = await runCli(

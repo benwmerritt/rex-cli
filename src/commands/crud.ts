@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { Command } from "commander";
-import { type ContextDeps, type RunContext, run } from "../cli/context";
+import { type ContextDeps, type PositionalArgs, type RunContext, run } from "../cli/context";
 import { appendAudit } from "../core/audit";
 import type { QueryValue } from "../core/client";
 import { ValidationError } from "../core/errors";
@@ -83,7 +83,7 @@ function parseNdjson(text: string): Record<string, unknown>[] {
 
 async function gatherRecords(
   opts: Record<string, unknown>,
-  args: string[],
+  args: PositionalArgs,
   requireId: boolean,
 ): Promise<Record<string, unknown>[]> {
   if (opts.file) {

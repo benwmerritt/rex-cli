@@ -60,13 +60,24 @@ export function loadSession(profile: string): StocktakeSession {
       details: { hint: "Run `rex stocktake begin --outlet <id|name> --user-id <id>` first." },
     });
   }
-  return JSON.parse(readFileSync(path, "utf8")) as StocktakeSession;
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as StocktakeSession;
+  } catch (err) {
+    throw new ValidationError("Stocktake session file is corrupted.", {
+      cause: err,
+      details: { path, hint: "Run `rex stocktake abort` to clear it, then start over." },
+    });
+  }
 }
 
 export function maybeLoadSession(profile: string): StocktakeSession | undefined {
   const path = sessionPath(profile);
   if (!existsSync(path)) return undefined;
-  return JSON.parse(readFileSync(path, "utf8")) as StocktakeSession;
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as StocktakeSession;
+  } catch {
+    return undefined;
+  }
 }
 
 export function saveSession(session: StocktakeSession): void {
@@ -136,12 +147,16 @@ export function upsertLine(
   return { session, line: next, updated: true };
 }
 
-export function removeLine(session: StocktakeSession, id: string): StocktakeLine {
+export function removeLine(
+  session: StocktakeSession,
+  id: string,
+  input: { now?: () => string } = {},
+): { session: StocktakeSession; line: StocktakeLine } {
   const idx = session.lines.findIndex((line) => line.lineId === id || String(line.productId) === id);
   if (idx === -1) throw new ValidationError(`Stocktake line not found: ${id}`);
   const [removed] = session.lines.splice(idx, 1);
-  session.updatedAt = new Date().toISOString();
-  return removed!;
+  session.updatedAt = input.now?.() ?? new Date().toISOString();
+  return { session, line: removed! };
 }
 
 export function summarizeSession(session: StocktakeSession): Record<string, unknown> {
@@ -180,24 +195,25 @@ export async function resolveOutlet(client: RexClient, value: string): Promise<O
 }
 
 export async function resolveProduct(client: RexClient, query: string): Promise<ResolvedProduct> {
+  const res = await listProducts(client, { pageSize: 10, query: { search: query } });
+
   if (/^\d+$/.test(query)) {
+    const scanMatches = exactScanMatches(res, query);
+    if (scanMatches.length === 1) return normalizeProduct(scanMatches[0]!);
+    if (scanMatches.length > 1) throw ambiguousProduct(query, scanMatches);
+
     try {
       return normalizeProduct(await getProduct(client, query));
     } catch (err) {
       if (!(err instanceof NotFoundError)) throw err;
-      // Fall through to search. A numeric scan can be a barcode rather than a product id.
+      // Fall through to the search result. A numeric scan can also be a partial name/model.
     }
   }
 
-  const res = await listProducts(client, { pageSize: 10, query: { search: query } });
   const exact = exactProductMatch(res, query);
   if (exact) return normalizeProduct(exact);
   if (res.nodes.length === 1) return normalizeProduct(res.nodes[0]!);
-  if (res.nodes.length > 1) {
-    throw new ValidationError(`Product "${query}" is ambiguous.`, {
-      details: { matches: res.nodes.slice(0, 10).map(productSummary) },
-    });
-  }
+  if (res.nodes.length > 1) throw ambiguousProduct(query, res.nodes);
   throw new ValidationError(`Product not found: ${query}`);
 }
 
@@ -206,21 +222,33 @@ export async function fetchOutletInventory(
   productId: number,
   outletId: number,
 ): Promise<InventorySnapshot> {
-  const res = await listResource<Record<string, unknown>>(client, "inventory", {
-    pageSize: 250,
-    query: { product_id: productId },
-  });
-  const row = res.nodes.find((item) => numberField(item, ["outlet_id", "outletId", "warehouse_id", "warehouseId", "WHID", "whid"]) === outletId);
-  if (!row) {
-    throw new ValidationError(`No inventory row found for product ${productId} at outlet ${outletId}.`);
-  }
-  const currentStock = numberField(row, ["stock_on_hand", "stockOnHand", "StockOnHand", "qty_on_hand", "QtyOnHand", "available"]);
-  if (currentStock === undefined) {
-    throw new ValidationError(`Inventory row for product ${productId} did not include stock on hand.`, {
-      details: { row },
+  const pageSize = 250;
+  let page = 1;
+  let fetched = 0;
+
+  for (;;) {
+    const res = await listResource<Record<string, unknown>>(client, "inventory", {
+      page,
+      pageSize,
+      query: { product_id: productId },
     });
+    const row = res.nodes.find((item) => inventoryOutletId(item) === outletId);
+    if (row) {
+      const currentStock = numberField(row, ["stock_on_hand", "stockOnHand", "StockOnHand", "qty_on_hand", "QtyOnHand"]);
+      if (currentStock === undefined) {
+        throw new ValidationError(`Inventory row for product ${productId} did not include stock on hand.`, {
+          details: { row },
+        });
+      }
+      return { outletId, currentStock, raw: row };
+    }
+
+    fetched += res.nodes.length;
+    if (res.nodes.length === 0 || fetched >= res.pageInfo.total) break;
+    page += 1;
   }
-  return { outletId, currentStock, raw: row };
+
+  throw new ValidationError(`No inventory row found for product ${productId} at outlet ${outletId}.`);
 }
 
 export function parseCountArgs(args: string[]): { query: string; counted: number } {
@@ -238,10 +266,25 @@ export function parseCountArgs(args: string[]): { query: string; counted: number
 function exactProductMatch(res: ListEnvelope<Product>, query: string): Product | undefined {
   const needle = query.trim().toLowerCase();
   return res.nodes.find((product) =>
-    [product.id, product.sku, product.SKU, product.barcode, product.supplier_sku, product.supplierSku]
+    [product.id, product.sku, product.SKU, product.barcode, product.Barcode, product.supplier_sku, product.supplierSku, product.SupplierSKU]
       .filter((v) => v !== undefined && v !== null)
       .some((v) => String(v).toLowerCase() === needle),
   );
+}
+
+function exactScanMatches(res: ListEnvelope<Product>, query: string): Product[] {
+  const needle = query.trim().toLowerCase();
+  return res.nodes.filter((product) =>
+    [product.sku, product.SKU, product.barcode, product.Barcode, product.supplier_sku, product.supplierSku, product.SupplierSKU]
+      .filter((v) => v !== undefined && v !== null)
+      .some((v) => String(v).toLowerCase() === needle),
+  );
+}
+
+function ambiguousProduct(query: string, matches: Product[]): ValidationError {
+  return new ValidationError(`Product "${query}" is ambiguous.`, {
+    details: { matches: matches.slice(0, 10).map(productSummary) },
+  });
 }
 
 function normalizeProduct(product: Product): ResolvedProduct {
@@ -263,6 +306,10 @@ function productSummary(product: Product): Record<string, unknown> {
 
 function nameField(obj: Record<string, unknown>): string | undefined {
   return stringField(obj, ["name", "outlet_name", "warehouse_name", "WarehouseName", "description"]);
+}
+
+function inventoryOutletId(obj: Record<string, unknown>): number | undefined {
+  return numberField(obj, ["outlet_id", "outletId", "warehouse_id", "warehouseId", "WHID", "whid"]);
 }
 
 function stringField(obj: Record<string, unknown>, keys: string[]): string | undefined {

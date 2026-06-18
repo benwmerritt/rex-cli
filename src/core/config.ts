@@ -213,8 +213,10 @@ export { configDir };
 function parseOptionalInt(value: string | undefined, name: string): number | undefined {
   if (value === undefined || value.trim() === "") return undefined;
   const text = value.trim();
-  if (!/^\d+$/.test(text)) throw new ValidationError(`${name} must be an integer.`);
+  if (!/^\d+$/.test(text)) throw new ValidationError(`${name} must be a non-negative integer.`);
   const n = Number.parseInt(text, 10);
-  if (!Number.isInteger(n)) throw new ValidationError(`${name} must be an integer.`);
+  if (!Number.isSafeInteger(n)) {
+    throw new ValidationError(`${name} is out of range; must not exceed Number.MAX_SAFE_INTEGER.`);
+  }
   return n;
 }

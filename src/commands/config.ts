@@ -66,26 +66,50 @@ export function registerConfig(program: Command, deps: ContextDeps): void {
   config
     .command("wms <profile>")
     .description("Store WMS SOAP credentials for stocktake workflows")
-    .requiredOption("--client-id <guid>", "Retail Express WMS client GUID")
-    .requiredOption("--username <name>", "Retail Express WMS username")
-    .requiredOption("--password <password>", "Retail Express WMS password")
-    .requiredOption("--url <url>", "Retail Express WMS service URL")
+    .option("--client-id <guid>", "Retail Express WMS client GUID (or REX_WMS_CLIENT_ID)")
+    .option("--username <name>", "Retail Express WMS username (or REX_WMS_USERNAME)")
+    .option("--password <password>", "Retail Express WMS password (or REX_WMS_PASSWORD)")
+    .option("--url <url>", "Retail Express WMS service URL (or REX_WMS_URL)")
     .option("--stocktake-user-id <id>", "Retail Express user id for stocktake submissions")
     .action(
       run(deps, (ctx, opts, args) => {
+        const env = deps.env ?? process.env;
+        const clientId = optionOrEnv(opts.clientId, env.REX_WMS_CLIENT_ID);
+        const username = optionOrEnv(opts.username, env.REX_WMS_USERNAME);
+        const password = optionOrEnv(opts.password, env.REX_WMS_PASSWORD);
+        const url = optionOrEnv(opts.url, env.REX_WMS_URL);
+        const missing: string[] = [];
+        if (!clientId) missing.push("--client-id or REX_WMS_CLIENT_ID");
+        if (!username) missing.push("--username or REX_WMS_USERNAME");
+        if (!password) missing.push("--password or REX_WMS_PASSWORD");
+        if (!url) missing.push("--url or REX_WMS_URL");
+        if (missing.length > 0) {
+          throw new ValidationError("WMS SOAP credentials are required for `rex config wms`.", {
+            details: {
+              missing,
+              hint: "Pass flags or export REX_WMS_CLIENT_ID, REX_WMS_USERNAME, REX_WMS_PASSWORD, and REX_WMS_URL.",
+            },
+          });
+        }
         const stocktakeUserId =
           opts.stocktakeUserId === undefined ? undefined : parsePositiveInt(opts.stocktakeUserId as string);
         saveWmsProfile({
           name: args[0]!,
-          clientId: opts.clientId as string,
-          username: opts.username as string,
-          password: opts.password as string,
-          url: opts.url as string,
+          clientId: clientId!,
+          username: username!,
+          password: password!,
+          url: url!,
           stocktakeUserId,
         });
         ctx.output.result({ ok: true, profile: args[0], config: configFile(), wms: true });
       }),
     );
+}
+
+function optionOrEnv(option: unknown, envValue: string | undefined): string | undefined {
+  const optionText = typeof option === "string" ? option.trim() : "";
+  const envText = envValue?.trim() ?? "";
+  return optionText || envText || undefined;
 }
 
 function parsePositiveInt(value: string): number {

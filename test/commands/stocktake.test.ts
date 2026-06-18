@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildProgram } from "../../src/cli/program";
@@ -71,6 +71,9 @@ async function runCli(
 }
 
 function retailExpressFixture(method: string, url: string): unknown {
+  if (url.includes("/products?")) {
+    return { data: [], page_number: 1, page_size: 10, total_records: 0 };
+  }
   if (url.includes("/products/124001")) return { id: 124001, short_description: "Weber Q 2200", sku: "WQ2200" };
   if (url.includes("/inventory")) {
     return {
@@ -118,6 +121,28 @@ describe("rex stocktake", () => {
     expect(seen).toEqual({ outletId: 3, userId: 4, items: [{ productId: 124001, variance: -2 }] });
     expect(JSON.parse(submitted.out)).toMatchObject({ ok: true, submitted: true, cleared: true });
 
+    const review = await runCli(["stocktake", "review"], retailExpressFixture);
+    expect(JSON.parse(review.err).error.code).toBe("validation");
+    process.exitCode = 0;
+  });
+
+  it("clears the session after WMS success even if audit logging fails", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+    mkdirSync(join(stateDir, "rex", "audit.jsonl"), { recursive: true });
+
+    let submissions = 0;
+    const wms: WmsClientLike = {
+      createStocktake: async () => {
+        submissions += 1;
+        return { ok: true, result: "Success" };
+      },
+    };
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, wms);
+    expect(submissions).toBe(1);
+    expect(JSON.parse(submitted.err).error.code).toBe("generic");
+
+    process.exitCode = 0;
     const review = await runCli(["stocktake", "review"], retailExpressFixture);
     expect(JSON.parse(review.err).error.code).toBe("validation");
     process.exitCode = 0;

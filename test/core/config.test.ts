@@ -112,6 +112,26 @@ describe("resolveProfile precedence", () => {
       ValidationError,
     );
   });
+
+  it("reports stocktake user id env values as non-negative integers", () => {
+    expect(() =>
+      resolveProfile({
+        env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "-1" },
+        configPath,
+        cwd: dir,
+      }),
+    ).toThrow("REX_STOCKTAKE_USER_ID must be a non-negative integer.");
+  });
+
+  it("reports stocktake user id env values above the safe integer limit as out of range", () => {
+    expect(() =>
+      resolveProfile({
+        env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "9007199254740992" },
+        configPath,
+        cwd: dir,
+      }),
+    ).toThrow("REX_STOCKTAKE_USER_ID is out of range; must not exceed Number.MAX_SAFE_INTEGER.");
+  });
 });
 
 describe("saveProfile / setDefaultProfile", () => {
