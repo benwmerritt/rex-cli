@@ -106,7 +106,7 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
       wmsUsername: env.REX_WMS_USERNAME?.trim() || undefined,
       wmsPassword: env.REX_WMS_PASSWORD?.trim() || undefined,
       wmsUrl: env.REX_WMS_URL?.trim() || undefined,
-      stocktakeUserIdEnv: env.REX_STOCKTAKE_USER_ID,
+      stocktakeUserIdEnv: env.REX_STOCKTAKE_USER_ID?.trim() || undefined,
     };
   }
 

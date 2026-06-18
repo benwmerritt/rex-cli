@@ -89,6 +89,9 @@ rex --dry-run stocktake submit
 Check the calculated variances before submitting. Example: if current stock is
 8 and the count is 6, the submitted variance is `-2`.
 
+Only non-zero variances are submitted to WMS. Zero-variance lines remain visible
+in local review, but are skipped during submission.
+
 ## Submit
 
 Submit only after the dry run looks right:

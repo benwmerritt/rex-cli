@@ -312,6 +312,7 @@ function postUrl(url: string): string {
 }
 
 function tag(text: string, name: string): string | undefined {
+  // SAFETY: all call sites pass hardcoded alphanumeric tag names, not user input.
   const re = new RegExp(`<(?:[A-Za-z0-9_]+:)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[A-Za-z0-9_]+:)?${name}>`, "i");
   return re.exec(text)?.[1];
 }
