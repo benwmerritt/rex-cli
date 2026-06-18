@@ -22,6 +22,8 @@ import {
   type StocktakeSession,
 } from "../resources/stocktake";
 
+const MAX_ERROR_CAUSE_DEPTH = 4;
+
 export function registerStocktake(program: Command, deps: ContextDeps): void {
   const stocktake = program.command("stocktake").alias("st").description("Agent-friendly stocktake counts");
 
@@ -282,7 +284,7 @@ function submitFailureDetails(err: unknown, kind: SubmitFailureKind): Record<str
 }
 
 function hasAmbiguousNetworkSignal(value: unknown, depth = 0): boolean {
-  if (depth > 4 || !isRecord(value)) return false;
+  if (depth > MAX_ERROR_CAUSE_DEPTH || !isRecord(value)) return false;
   const code = typeof value.code === "string" ? value.code.toUpperCase() : undefined;
   if (code && ["ETIMEDOUT", "ECONNRESET", "ECONNABORTED", "EPIPE"].includes(code)) return true;
   const name = typeof value.name === "string" ? value.name : "";
