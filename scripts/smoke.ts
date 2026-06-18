@@ -4,7 +4,7 @@
  * Credentials come from the environment (never hard-coded):
  *   REX_API_KEY=... bun scripts/smoke.ts
  *
- * It only performs GETs (plus the auth token POST). It never writes catalogue
+ * It only performs GETs (the auth token endpoint is also a GET). It never writes catalogue
  * data. Use it to confirm auth, headers, pagination, and parsing for real.
  */
 import { createAuth } from "../src/core/auth";
@@ -30,7 +30,7 @@ function preview(data: unknown, max = 900): string {
 
 async function main() {
   console.log(`base=${baseUrl} version=${version}`);
-  console.log("\n== auth: POST /auth/token ==");
+  console.log("\n== auth: GET /v2/auth/token ==");
   const token = await auth.ensureToken();
   console.log("OK — bearer token acquired:", token.slice(0, 10) + "…");
 
