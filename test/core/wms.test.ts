@@ -131,28 +131,26 @@ describe("WMS stocktake SOAP", () => {
     expect(cleared).toBe(true);
   });
 
-  it("uses AbortSignal.timeout with a 30 second timeout by default", async () => {
-    const originalTimeout = AbortSignal.timeout;
+  it("uses the default 30 second timeout when creating the request signal", async () => {
     const timeoutController = new AbortController();
     let seenTimeout = 0;
     let seenSignal: AbortSignal | undefined;
-    AbortSignal.timeout = ((ms: number) => {
-      seenTimeout = ms;
-      return timeoutController.signal;
-    }) as typeof AbortSignal.timeout;
     const transport: Transport = async (_url, init) => {
       seenSignal = init.signal ?? undefined;
       return new Response(
         `<soap:Envelope><soap:Body><CreateStocktakeResponse><CreateStocktakeResult>&lt;Response&gt;&lt;Result&gt;Success&lt;/Result&gt;&lt;Message /&gt;&lt;/Response&gt;</CreateStocktakeResult></CreateStocktakeResponse></soap:Body></soap:Envelope>`,
       );
     };
-    const client = new WmsClient({ config, transport });
+    const client = new WmsClient({
+      config,
+      transport,
+      timeoutSignalFactory: (ms) => {
+        seenTimeout = ms;
+        return timeoutController.signal;
+      },
+    });
 
-    try {
-      await client.createStocktake({ outletId: 3, userId: 4, items: [{ productId: 1, variance: 1 }] });
-    } finally {
-      AbortSignal.timeout = originalTimeout;
-    }
+    await client.createStocktake({ outletId: 3, userId: 4, items: [{ productId: 1, variance: 1 }] });
     expect(seenTimeout).toBe(DEFAULT_WMS_TIMEOUT_MS);
     expect(seenSignal).toBe(timeoutController.signal);
   });

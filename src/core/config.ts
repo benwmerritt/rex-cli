@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { ValidationError } from "./errors";
 import { configDir, configFile } from "./paths";
+import { parseOptionalPositiveInt } from "./validation";
 
 export const DEFAULT_BASE_URL = "https://api.retailexpress.com.au";
 export const DEFAULT_VERSION = "v2.1";
@@ -145,7 +146,7 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
 }
 
 export function resolveStocktakeUserId(profile: Profile): number | undefined {
-  return profile.stocktakeUserId ?? parseOptionalInt(profile.stocktakeUserIdEnv, "REX_STOCKTAKE_USER_ID");
+  return profile.stocktakeUserId ?? parseOptionalPositiveInt(profile.stocktakeUserIdEnv, "REX_STOCKTAKE_USER_ID");
 }
 
 /** Write config atomically with 0600 perms (temp file + rename). */
@@ -221,14 +222,3 @@ export function setDefaultProfile(name: string, configPath: string = configFile(
 }
 
 export { configDir };
-
-function parseOptionalInt(value: string | undefined, name: string): number | undefined {
-  if (value === undefined || value.trim() === "") return undefined;
-  const text = value.trim();
-  if (!/^\d+$/.test(text)) throw new ValidationError(`${name} must be a non-negative integer.`);
-  const n = Number.parseInt(text, 10);
-  if (!Number.isSafeInteger(n)) {
-    throw new ValidationError(`${name} is out of range; must not exceed Number.MAX_SAFE_INTEGER.`);
-  }
-  return n;
-}

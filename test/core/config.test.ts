@@ -145,7 +145,16 @@ describe("resolveProfile precedence", () => {
       cwd: dir,
     });
     expect(p.apiKey).toBe("ENVKEY");
-    expect(() => resolveStocktakeUserId(p)).toThrow("REX_STOCKTAKE_USER_ID must be a non-negative integer.");
+    expect(() => resolveStocktakeUserId(p)).toThrow("REX_STOCKTAKE_USER_ID must be a positive integer.");
+  });
+
+  it("reports zero stocktake user id env values as positive integers", () => {
+    const p = resolveProfile({
+      env: { REX_API_KEY: "ENVKEY", REX_STOCKTAKE_USER_ID: "0" },
+      configPath,
+      cwd: dir,
+    });
+    expect(() => resolveStocktakeUserId(p)).toThrow("REX_STOCKTAKE_USER_ID must be a positive integer.");
   });
 
   it("reports stocktake user id env values above the safe integer limit as out of range", () => {

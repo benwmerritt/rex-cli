@@ -178,7 +178,7 @@ describe("rex stocktake", () => {
     expect(started.out).toBe("");
     expect(JSON.parse(started.err).error).toMatchObject({
       code: "validation",
-      message: "REX_STOCKTAKE_USER_ID must be a non-negative integer.",
+      message: "REX_STOCKTAKE_USER_ID must be a positive integer.",
     });
   });
 
