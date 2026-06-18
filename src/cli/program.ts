@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { registerApi } from "../commands/api";
 import { registerAuth } from "../commands/auth";
 import { registerConfig } from "../commands/config";
+import { registerProduct } from "../commands/products";
 import { asInt, type ContextDeps } from "./context";
 
 /**
@@ -29,6 +30,7 @@ export function buildProgram(deps: ContextDeps = {}): Command {
   registerAuth(program, deps);
   registerConfig(program, deps);
   registerApi(program, deps);
+  registerProduct(program, deps);
 
   return program;
 }
