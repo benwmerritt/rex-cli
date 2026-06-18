@@ -9,6 +9,7 @@ import {
   parseConfig,
   resolveProfile,
   saveProfile,
+  saveWmsProfile,
   setDefaultProfile,
 } from "../../src/core/config";
 import { ValidationError } from "../../src/core/errors";
@@ -50,12 +51,28 @@ describe("resolveProfile precedence", () => {
   beforeEach(() => writeFileSync(configPath, SAMPLE));
 
   it("REX_API_KEY env overrides everything (ephemeral profile + defaults)", () => {
-    const p = resolveProfile({ env: { REX_API_KEY: "ENVKEY" }, configPath, cwd: dir });
-    expect(p).toEqual({
+    const p = resolveProfile({
+      env: {
+        REX_API_KEY: "ENVKEY",
+        REX_WMS_CLIENT_ID: "CID",
+        REX_WMS_USERNAME: "wsi",
+        REX_WMS_PASSWORD: "secret",
+        REX_WMS_URL: "https://wms",
+        REX_STOCKTAKE_USER_ID: "4",
+      },
+      configPath,
+      cwd: dir,
+    });
+    expect(p).toMatchObject({
       name: "env",
       apiKey: "ENVKEY",
       baseUrl: DEFAULT_BASE_URL,
       version: DEFAULT_VERSION,
+      wmsClientId: "CID",
+      wmsUsername: "wsi",
+      wmsPassword: "secret",
+      wmsUrl: "https://wms",
+      stocktakeUserId: 4,
     });
   });
 
@@ -121,5 +138,29 @@ describe("saveProfile / setDefaultProfile", () => {
     setDefaultProfile("b", configPath);
     expect(loadConfig(configPath).defaultProfile).toBe("b");
     expect(() => setDefaultProfile("ghost", configPath)).toThrow(ValidationError);
+  });
+
+  it("adds WMS SOAP credentials to an existing REST profile", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID",
+        username: "wsi",
+        password: "secret",
+        url: "https://wms/service.asmx?wsdl",
+        stocktakeUserId: 4,
+      },
+      configPath,
+    );
+    const p = resolveProfile({ profileFlag: "a", env: {}, configPath, cwd: dir });
+    expect(p).toMatchObject({
+      apiKey: "K1",
+      wmsClientId: "CID",
+      wmsUsername: "wsi",
+      wmsPassword: "secret",
+      wmsUrl: "https://wms/service.asmx?wsdl",
+      stocktakeUserId: 4,
+    });
   });
 });

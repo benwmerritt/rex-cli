@@ -39,13 +39,16 @@ rex product get 124001
 rex product list --all > products.ndjson      # all pages, one JSON object per line
 rex inventory list --filter product_id=124001
 rex order list --include items,payments
+rex stocktake begin --outlet "Mile End" --user-id 4
+rex stocktake count weber q 2200 6
+rex --dry-run stocktake submit
 rex api GET outlets                            # raw call to any endpoint
 ```
 
 Commands follow `rex <resource> <action>`. Resources: `product` (p), `inventory`
 (inv), `customer` (c), `order` (o), `supplier` (sup), `outlet`, `product-type`
 (pt), `attribute` (attr), `barcode`, `purchase-order` (po), `transfer` (xfer),
-`loyalty-reason`, `loyalty-history`, `stock-reason`.
+`loyalty-reason`, `loyalty-history`, `stock-reason`, `stocktake` (st).
 
 `rex --help` lists everything; `rex <resource> --help` shows a resource's actions.
 
@@ -70,6 +73,40 @@ rex product disable 124001                              # soft-disable (not a ha
 - `update` re-fetches the record and sends only the fields that changed.
 - Price fields require `--allow-price`.
 - Every write is appended to `~/.local/state/rex/audit.jsonl`.
+
+## Stocktake
+
+Stocktake counts use the legacy Retail Express WMS SOAP `CreateStocktake`
+method. The CLI accepts absolute counted quantities, calculates the outlet
+variance from current inventory, then submits a stocktake in Retail Express
+awaiting manual authorisation.
+
+Configure WMS once on an existing REST profile:
+
+```bash
+rex config wms default \
+  --client-id <guid> \
+  --username <wms-user> \
+  --password <wms-password> \
+  --url <wms-service-url> \
+  --stocktake-user-id <retail-express-user-id>
+```
+
+Daily workflow:
+
+```bash
+rex stocktake begin --outlet "Gepps X"
+rex stocktake count weber q 2200 6
+rex stocktake count 124001 3
+rex stocktake review
+rex --dry-run stocktake submit
+rex stocktake submit
+```
+
+`count` updates the staged line if the same product is counted again. Only
+non-zero variances are submitted; zero-variance lines are kept in the review but
+skipped on submit. The WMS account must have the Retail Express Web Services
+Interface enabled.
 
 ## Configuration
 

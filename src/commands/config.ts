@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import type { Command } from "commander";
 import { type ContextDeps, run } from "../cli/context";
-import { loadConfig, writeConfig } from "../core/config";
+import { loadConfig, saveWmsProfile, writeConfig } from "../core/config";
+import { ValidationError } from "../core/errors";
 import { configFile } from "../core/paths";
 
 function redact(key: string | undefined): string {
@@ -28,7 +29,15 @@ export function registerConfig(program: Command, deps: ContextDeps): void {
       run(deps, (ctx) => {
         const cfg = loadConfig();
         const profiles = Object.fromEntries(
-          Object.entries(cfg.profiles).map(([name, p]) => [name, { ...p, api_key: redact(p.api_key) }]),
+          Object.entries(cfg.profiles).map(([name, p]) => [
+            name,
+            {
+              ...p,
+              api_key: redact(p.api_key),
+              wms_client_id: redact(p.wms_client_id),
+              wms_password: redact(p.wms_password),
+            },
+          ]),
         );
         ctx.output.result({ path: configFile(), defaultProfile: cfg.defaultProfile, profiles });
       }),
@@ -53,4 +62,36 @@ export function registerConfig(program: Command, deps: ContextDeps): void {
         });
       }),
     );
+
+  config
+    .command("wms <profile>")
+    .description("Store WMS SOAP credentials for stocktake workflows")
+    .requiredOption("--client-id <guid>", "Retail Express WMS client GUID")
+    .requiredOption("--username <name>", "Retail Express WMS username")
+    .requiredOption("--password <password>", "Retail Express WMS password")
+    .requiredOption("--url <url>", "Retail Express WMS service URL")
+    .option("--stocktake-user-id <id>", "Retail Express user id for stocktake submissions")
+    .action(
+      run(deps, (ctx, opts, args) => {
+        const stocktakeUserId =
+          opts.stocktakeUserId === undefined ? undefined : parsePositiveInt(opts.stocktakeUserId as string);
+        saveWmsProfile({
+          name: args[0]!,
+          clientId: opts.clientId as string,
+          username: opts.username as string,
+          password: opts.password as string,
+          url: opts.url as string,
+          stocktakeUserId,
+        });
+        ctx.output.result({ ok: true, profile: args[0], config: configFile(), wms: true });
+      }),
+    );
+}
+
+function parsePositiveInt(value: string): number {
+  const text = value.trim();
+  if (!/^\d+$/.test(text)) throw new ValidationError("--stocktake-user-id must be an integer.");
+  const n = Number.parseInt(text, 10);
+  if (n <= 0) throw new ValidationError("--stocktake-user-id must be a positive integer.");
+  return n;
 }

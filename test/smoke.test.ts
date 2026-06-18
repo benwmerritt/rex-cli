@@ -8,7 +8,7 @@ describe("program", () => {
 
   it("registers the top-level commands and resources", () => {
     const names = buildProgram().commands.map((c) => c.name());
-    for (const n of ["auth", "config", "api", "product", "customer", "order", "inventory", "supplier", "outlet"]) {
+    for (const n of ["auth", "config", "api", "product", "customer", "order", "inventory", "supplier", "outlet", "stocktake"]) {
       expect(names).toContain(n);
     }
   });

@@ -37,3 +37,7 @@ export function tokenCacheFile(profile: string): string {
 export function rateLimitFile(profile: string): string {
   return join(cacheDir(), `${profile}.ratelimit.json`);
 }
+
+export function stocktakeSessionFile(profile: string): string {
+  return join(stateDir(), `stocktake.${profile}.json`);
+}

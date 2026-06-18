@@ -13,6 +13,11 @@ export interface Profile {
   apiKey: string;
   baseUrl: string;
   version: string;
+  wmsClientId?: string;
+  wmsUsername?: string;
+  wmsPassword?: string;
+  wmsUrl?: string;
+  stocktakeUserId?: number;
 }
 
 /** A profile as stored in config.toml (fields optional; defaults applied on resolve). */
@@ -20,6 +25,11 @@ export interface RawProfile {
   api_key?: string;
   base_url?: string;
   version?: string;
+  wms_client_id?: string;
+  wms_username?: string;
+  wms_password?: string;
+  wms_url?: string;
+  stocktake_user_id?: number;
 }
 
 export interface RexConfig {
@@ -75,6 +85,7 @@ export interface ResolveOptions {
  */
 export function resolveProfile(opts: ResolveOptions = {}): Profile {
   const env = opts.env ?? process.env;
+  const envStocktakeUserId = parseOptionalInt(env.REX_STOCKTAKE_USER_ID, "REX_STOCKTAKE_USER_ID");
 
   const envKey = env.REX_API_KEY?.trim();
   if (envKey) {
@@ -83,6 +94,11 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
       apiKey: envKey,
       baseUrl: env.REX_BASE_URL?.trim() || DEFAULT_BASE_URL,
       version: env.REX_VERSION?.trim() || DEFAULT_VERSION,
+      wmsClientId: env.REX_WMS_CLIENT_ID?.trim() || undefined,
+      wmsUsername: env.REX_WMS_USERNAME?.trim() || undefined,
+      wmsPassword: env.REX_WMS_PASSWORD?.trim() || undefined,
+      wmsUrl: env.REX_WMS_URL?.trim() || undefined,
+      stocktakeUserId: envStocktakeUserId,
     };
   }
 
@@ -112,6 +128,11 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
     apiKey: raw.api_key,
     baseUrl: raw.base_url?.trim() || DEFAULT_BASE_URL,
     version: raw.version?.trim() || DEFAULT_VERSION,
+    wmsClientId: raw.wms_client_id?.trim() || env.REX_WMS_CLIENT_ID?.trim() || undefined,
+    wmsUsername: raw.wms_username?.trim() || env.REX_WMS_USERNAME?.trim() || undefined,
+    wmsPassword: raw.wms_password?.trim() || env.REX_WMS_PASSWORD?.trim() || undefined,
+    wmsUrl: raw.wms_url?.trim() || env.REX_WMS_URL?.trim() || undefined,
+    stocktakeUserId: raw.stocktake_user_id ?? envStocktakeUserId,
   };
 }
 
@@ -134,15 +155,44 @@ export interface SaveProfileInput {
   version?: string;
 }
 
+export interface SaveWmsProfileInput {
+  name: string;
+  clientId: string;
+  username: string;
+  password: string;
+  url: string;
+  stocktakeUserId?: number;
+}
+
 /** Upsert a profile into config.toml. The first profile saved becomes the default. */
 export function saveProfile(input: SaveProfileInput, configPath: string = configFile()): void {
   const config = loadConfig(configPath);
   config.profiles[input.name] = {
+    ...config.profiles[input.name],
     api_key: input.apiKey,
     base_url: input.baseUrl ?? DEFAULT_BASE_URL,
     version: input.version ?? DEFAULT_VERSION,
   };
   if (!config.defaultProfile) config.defaultProfile = input.name;
+  writeConfig(config, configPath);
+}
+
+export function saveWmsProfile(input: SaveWmsProfileInput, configPath: string = configFile()): void {
+  const config = loadConfig(configPath);
+  const existing = config.profiles[input.name];
+  if (!existing?.api_key) {
+    throw new ValidationError(`Profile "${input.name}" not found or missing api_key.`, {
+      details: { profile: input.name, available: Object.keys(config.profiles) },
+    });
+  }
+  config.profiles[input.name] = {
+    ...existing,
+    wms_client_id: input.clientId,
+    wms_username: input.username,
+    wms_password: input.password,
+    wms_url: input.url,
+    ...(input.stocktakeUserId !== undefined ? { stocktake_user_id: input.stocktakeUserId } : {}),
+  };
   writeConfig(config, configPath);
 }
 
@@ -159,3 +209,12 @@ export function setDefaultProfile(name: string, configPath: string = configFile(
 }
 
 export { configDir };
+
+function parseOptionalInt(value: string | undefined, name: string): number | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  const text = value.trim();
+  if (!/^\d+$/.test(text)) throw new ValidationError(`${name} must be an integer.`);
+  const n = Number.parseInt(text, 10);
+  if (!Number.isInteger(n)) throw new ValidationError(`${name} must be an integer.`);
+  return n;
+}

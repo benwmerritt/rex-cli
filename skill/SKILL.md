@@ -7,7 +7,9 @@ allowed-tools: Bash(rex:*), Bash(jq:*)
 # rex — Retail Express CLI
 
 `rex` is an agent-first CLI over the Retail Express REST API: JSON by default,
-non-interactive, with strong write guardrails. If `rex` isn't on PATH, build it:
+non-interactive, with strong write guardrails. Stocktake submit uses the legacy
+Retail Express WMS SOAP API because REST does not expose stocktake creation. If
+`rex` isn't on PATH, build it:
 `cd ~/dev/projects/rex-cli && bun run compile && cp rex ~/.local/bin/`.
 
 ## Output contract (read first)
@@ -26,7 +28,7 @@ with `rex auth test` → `{ok:true, outlets:N}`. Pick a tenant with `--profile`.
 `rex <resource> <action> [args] [flags]`. Resources: `product` (p), `inventory`
 (inv), `customer` (c), `order` (o), `supplier` (sup), `outlet`, `product-type`
 (pt), `attribute` (attr), `barcode`, `purchase-order` (po), `transfer` (xfer),
-`loyalty-reason`, `loyalty-history`, `stock-reason`. Full list + flags:
+`loyalty-reason`, `loyalty-history`, `stock-reason`, `stocktake` (st). Full list + flags:
 [references/commands.md](references/commands.md).
 
 ```bash
@@ -35,6 +37,26 @@ rex product list --search weber --page-size 50 | jq '.nodes[].id'
 rex product list --all > products.ndjson      # every page, NDJSON stream
 rex inventory list --filter product_id=124001  # SOH/available per outlet
 ```
+
+## Agent stocktake workflow
+
+Use when the human is physically counting products and wants the agent to enter
+counts. Set the outlet once, then treat the last token of each `count` command
+as the absolute counted quantity.
+
+```bash
+rex stocktake begin --outlet "Gepps X"          # user id can come from config
+rex stocktake count weber q 2200 6              # "we have six"
+rex stocktake count 124001 3                    # exact product id is safest
+rex stocktake review
+rex --dry-run stocktake submit                  # preview WMS variance payload
+rex stocktake submit                            # creates Awaiting Authorisation stocktake
+```
+
+`count` calculates variance from current outlet stock and updates an existing
+line if the same product is counted again. Do not create direct stock
+adjustments for this workflow; Retail Express manual authorisation remains the
+control point.
 
 `list` returns ONE page; use `--all` (streams NDJSON) for everything — choosing
 wrong is the #1 reason a result looks empty.

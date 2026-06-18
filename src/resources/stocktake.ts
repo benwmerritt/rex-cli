@@ -1,0 +1,283 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import type { RexClient } from "../core/client";
+import { NotFoundError, ValidationError } from "../core/errors";
+import { stocktakeSessionFile } from "../core/paths";
+import type { ListEnvelope } from "../core/paginate";
+import { getProduct, listProducts, type Product } from "./products";
+import { listResource } from "./crud";
+
+export interface StocktakeSession {
+  id: string;
+  profile: string;
+  outletId: number;
+  outletName?: string;
+  userId: number;
+  createdAt: string;
+  updatedAt: string;
+  lines: StocktakeLine[];
+}
+
+export interface StocktakeLine {
+  lineId: string;
+  query: string;
+  productId: number;
+  description?: string;
+  sku?: string;
+  counted: number;
+  currentStock: number;
+  variance: number;
+  addedAt: string;
+  updatedAt: string;
+}
+
+export interface OutletRef {
+  id: number;
+  name?: string;
+}
+
+export interface ResolvedProduct {
+  id: number;
+  description?: string;
+  sku?: string;
+  raw: Product;
+}
+
+export interface InventorySnapshot {
+  outletId: number;
+  currentStock: number;
+  raw: Record<string, unknown>;
+}
+
+export function sessionPath(profile: string): string {
+  return stocktakeSessionFile(profile);
+}
+
+export function loadSession(profile: string): StocktakeSession {
+  const path = sessionPath(profile);
+  if (!existsSync(path)) {
+    throw new ValidationError("No active stocktake session.", {
+      details: { hint: "Run `rex stocktake begin --outlet <id|name> --user-id <id>` first." },
+    });
+  }
+  return JSON.parse(readFileSync(path, "utf8")) as StocktakeSession;
+}
+
+export function maybeLoadSession(profile: string): StocktakeSession | undefined {
+  const path = sessionPath(profile);
+  if (!existsSync(path)) return undefined;
+  return JSON.parse(readFileSync(path, "utf8")) as StocktakeSession;
+}
+
+export function saveSession(session: StocktakeSession): void {
+  const path = sessionPath(session.profile);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(session, null, 2), { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
+export function clearSession(profile: string): void {
+  rmSync(sessionPath(profile), { force: true });
+}
+
+export function createSession(input: {
+  profile: string;
+  outlet: OutletRef;
+  userId: number;
+  now?: () => string;
+}): StocktakeSession {
+  const now = input.now?.() ?? new Date().toISOString();
+  return {
+    id: `${input.profile}-${Date.now().toString(36)}`,
+    profile: input.profile,
+    outletId: input.outlet.id,
+    outletName: input.outlet.name,
+    userId: input.userId,
+    createdAt: now,
+    updatedAt: now,
+    lines: [],
+  };
+}
+
+export function upsertLine(
+  session: StocktakeSession,
+  input: {
+    query: string;
+    product: ResolvedProduct;
+    counted: number;
+    currentStock: number;
+    now?: () => string;
+  },
+): { session: StocktakeSession; line: StocktakeLine; updated: boolean } {
+  const now = input.now?.() ?? new Date().toISOString();
+  const variance = input.counted - input.currentStock;
+  const next: StocktakeLine = {
+    lineId: String(input.product.id),
+    query: input.query,
+    productId: input.product.id,
+    description: input.product.description,
+    sku: input.product.sku,
+    counted: input.counted,
+    currentStock: input.currentStock,
+    variance,
+    addedAt: now,
+    updatedAt: now,
+  };
+  const idx = session.lines.findIndex((line) => line.productId === input.product.id);
+  if (idx === -1) {
+    session.lines.push(next);
+    session.updatedAt = now;
+    return { session, line: next, updated: false };
+  }
+  next.addedAt = session.lines[idx]!.addedAt;
+  session.lines[idx] = next;
+  session.updatedAt = now;
+  return { session, line: next, updated: true };
+}
+
+export function removeLine(session: StocktakeSession, id: string): StocktakeLine {
+  const idx = session.lines.findIndex((line) => line.lineId === id || String(line.productId) === id);
+  if (idx === -1) throw new ValidationError(`Stocktake line not found: ${id}`);
+  const [removed] = session.lines.splice(idx, 1);
+  session.updatedAt = new Date().toISOString();
+  return removed!;
+}
+
+export function summarizeSession(session: StocktakeSession): Record<string, unknown> {
+  const nonZero = session.lines.filter((line) => line.variance !== 0);
+  return {
+    id: session.id,
+    profile: session.profile,
+    outletId: session.outletId,
+    outletName: session.outletName,
+    userId: session.userId,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    totalLines: session.lines.length,
+    submitLines: nonZero.length,
+    zeroVarianceLines: session.lines.length - nonZero.length,
+    positiveVariance: nonZero.filter((line) => line.variance > 0).reduce((sum, line) => sum + line.variance, 0),
+    negativeVariance: nonZero.filter((line) => line.variance < 0).reduce((sum, line) => sum + line.variance, 0),
+    lines: session.lines,
+  };
+}
+
+export async function resolveOutlet(client: RexClient, value: string): Promise<OutletRef> {
+  if (/^\d+$/.test(value)) return { id: Number(value) };
+  const env = await listResource<Record<string, unknown>>(client, "outlets", { pageSize: 250 });
+  const needle = value.trim().toLowerCase();
+  const matches = env.nodes
+    .map((outlet) => ({ outlet, id: numberField(outlet, ["id", "outlet_id", "WHID", "whid"]), name: nameField(outlet) }))
+    .filter((outlet) => outlet.id !== undefined && outlet.name?.toLowerCase().includes(needle));
+  if (matches.length === 1) return { id: matches[0]!.id!, name: matches[0]!.name };
+  if (matches.length > 1) {
+    throw new ValidationError(`Outlet "${value}" is ambiguous.`, {
+      details: { matches: matches.map((m) => ({ id: m.id, name: m.name })) },
+    });
+  }
+  throw new ValidationError(`Outlet not found: ${value}`);
+}
+
+export async function resolveProduct(client: RexClient, query: string): Promise<ResolvedProduct> {
+  if (/^\d+$/.test(query)) {
+    try {
+      return normalizeProduct(await getProduct(client, query));
+    } catch (err) {
+      if (!(err instanceof NotFoundError)) throw err;
+      // Fall through to search. A numeric scan can be a barcode rather than a product id.
+    }
+  }
+
+  const res = await listProducts(client, { pageSize: 10, query: { search: query } });
+  const exact = exactProductMatch(res, query);
+  if (exact) return normalizeProduct(exact);
+  if (res.nodes.length === 1) return normalizeProduct(res.nodes[0]!);
+  if (res.nodes.length > 1) {
+    throw new ValidationError(`Product "${query}" is ambiguous.`, {
+      details: { matches: res.nodes.slice(0, 10).map(productSummary) },
+    });
+  }
+  throw new ValidationError(`Product not found: ${query}`);
+}
+
+export async function fetchOutletInventory(
+  client: RexClient,
+  productId: number,
+  outletId: number,
+): Promise<InventorySnapshot> {
+  const res = await listResource<Record<string, unknown>>(client, "inventory", {
+    pageSize: 250,
+    query: { product_id: productId },
+  });
+  const row = res.nodes.find((item) => numberField(item, ["outlet_id", "outletId", "warehouse_id", "warehouseId", "WHID", "whid"]) === outletId);
+  if (!row) {
+    throw new ValidationError(`No inventory row found for product ${productId} at outlet ${outletId}.`);
+  }
+  const currentStock = numberField(row, ["stock_on_hand", "stockOnHand", "StockOnHand", "qty_on_hand", "QtyOnHand", "available"]);
+  if (currentStock === undefined) {
+    throw new ValidationError(`Inventory row for product ${productId} did not include stock on hand.`, {
+      details: { row },
+    });
+  }
+  return { outletId, currentStock, raw: row };
+}
+
+export function parseCountArgs(args: string[]): { query: string; counted: number } {
+  if (args.length < 2) throw new ValidationError("Usage: rex stocktake count <product words...> <count>");
+  const countText = args[args.length - 1]!;
+  const counted = Number.parseInt(countText, 10);
+  if (!Number.isInteger(counted) || counted < 0 || String(counted) !== countText.trim()) {
+    throw new ValidationError("Stocktake count must be a non-negative integer.");
+  }
+  const query = args.slice(0, -1).join(" ").trim();
+  if (!query) throw new ValidationError("Provide a product id, barcode, SKU, or product name.");
+  return { query, counted };
+}
+
+function exactProductMatch(res: ListEnvelope<Product>, query: string): Product | undefined {
+  const needle = query.trim().toLowerCase();
+  return res.nodes.find((product) =>
+    [product.id, product.sku, product.SKU, product.barcode, product.supplier_sku, product.supplierSku]
+      .filter((v) => v !== undefined && v !== null)
+      .some((v) => String(v).toLowerCase() === needle),
+  );
+}
+
+function normalizeProduct(product: Product): ResolvedProduct {
+  const id = numberField(product, ["id", "product_id", "ProductId", "Product_ID"]);
+  if (id === undefined) throw new ValidationError("Resolved product did not include an id.", { details: { product } });
+  return {
+    id,
+    description:
+      stringField(product, ["short_description", "description", "name", "ShortDescription", "Description"]) ?? `Product ${id}`,
+    sku: stringField(product, ["sku", "SKU", "supplier_sku", "SupplierSKU"]),
+    raw: product,
+  };
+}
+
+function productSummary(product: Product): Record<string, unknown> {
+  const normalized = normalizeProduct(product);
+  return { id: normalized.id, description: normalized.description, sku: normalized.sku };
+}
+
+function nameField(obj: Record<string, unknown>): string | undefined {
+  return stringField(obj, ["name", "outlet_name", "warehouse_name", "WarehouseName", "description"]);
+}
+
+function stringField(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function numberField(obj: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return Number.parseInt(value, 10);
+  }
+  return undefined;
+}

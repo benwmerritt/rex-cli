@@ -40,6 +40,32 @@ rex inventory list --all \
            | {product_id, outlet_id, available, msl}'
 ```
 
+## Agent-assisted stocktake
+
+Use this when the operator is physically counting stock and wants to avoid
+selecting the same outlet and product screen repeatedly. The operator gives an
+absolute count; `rex` calculates the variance to submit to WMS.
+
+```bash
+# 1. start the day's session once for the outlet
+rex stocktake begin --outlet "Mile End"
+
+# 2. count products as the operator says them
+rex stocktake count weber q 2200 6
+rex stocktake count 124001 3
+
+# 3. review and preview before the live WMS submit
+rex stocktake review
+rex --dry-run stocktake submit
+
+# 4. submit creates a Retail Express stocktake awaiting authorisation
+rex stocktake submit
+```
+
+If a product name is ambiguous, stop and ask the operator to choose from the
+JSON `matches`. Prefer product ids or barcodes when scanning. Never use direct
+stock adjustments for this workflow unless explicitly requested.
+
 ## Find then act by id
 
 ```bash
