@@ -146,7 +146,10 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
 }
 
 export function resolveStocktakeUserId(profile: Profile): number | undefined {
-  return profile.stocktakeUserId ?? parseOptionalPositiveInt(profile.stocktakeUserIdEnv, "REX_STOCKTAKE_USER_ID");
+  return (
+    parseOptionalPositiveInt(profile.stocktakeUserId, "stocktake_user_id") ??
+    parseOptionalPositiveInt(profile.stocktakeUserIdEnv, "REX_STOCKTAKE_USER_ID")
+  );
 }
 
 /** Write config atomically with 0600 perms (temp file + rename). */
@@ -223,7 +226,9 @@ export function saveWmsProfile(input: SaveWmsProfileInput, configPath: string = 
     wms_url: input.url,
   };
   if (input.stocktakeUserId === null) delete next.stocktake_user_id;
-  else if (input.stocktakeUserId !== undefined) next.stocktake_user_id = input.stocktakeUserId;
+  else if (input.stocktakeUserId !== undefined) {
+    next.stocktake_user_id = parseOptionalPositiveInt(input.stocktakeUserId, "stocktake_user_id");
+  }
   config.profiles[profileName] = next;
   writeConfig(config, configPath);
 }

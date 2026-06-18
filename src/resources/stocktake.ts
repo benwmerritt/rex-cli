@@ -44,6 +44,19 @@ export interface ResolvedProduct {
   raw: Product;
 }
 
+const SCAN_FIELDS = [
+  "sku",
+  "SKU",
+  "barcode",
+  "Barcode",
+  "supplier_sku",
+  "supplierSku",
+  "SupplierSKU",
+  "manufacturer_sku",
+  "manufacturerSku",
+  "ManufacturerSKU",
+] as const;
+
 export interface InventorySnapshot {
   outletId: number;
   currentStock: number;
@@ -328,19 +341,7 @@ export function parseCountArgs(args: string[]): { query: string; counted: number
 function exactProductMatches(res: ListEnvelope<Product>, query: string): Product[] {
   const needle = query.trim().toLowerCase();
   return res.nodes.filter((product) =>
-    [
-      product.id,
-      product.sku,
-      product.SKU,
-      product.barcode,
-      product.Barcode,
-      product.supplier_sku,
-      product.supplierSku,
-      product.SupplierSKU,
-      product.manufacturer_sku,
-      product.manufacturerSku,
-      product.ManufacturerSKU,
-    ]
+    [product.id, ...SCAN_FIELDS.map((field) => product[field])]
       .filter((v) => v !== undefined && v !== null)
       .some((v) => String(v).toLowerCase() === needle),
   );
@@ -349,18 +350,7 @@ function exactProductMatches(res: ListEnvelope<Product>, query: string): Product
 function exactScanMatches(res: ListEnvelope<Product>, query: string): Product[] {
   const needle = query.trim().toLowerCase();
   return res.nodes.filter((product) =>
-    [
-      product.sku,
-      product.SKU,
-      product.barcode,
-      product.Barcode,
-      product.supplier_sku,
-      product.supplierSku,
-      product.SupplierSKU,
-      product.manufacturer_sku,
-      product.manufacturerSku,
-      product.ManufacturerSKU,
-    ]
+    SCAN_FIELDS.map((field) => product[field])
       .filter((v) => v !== undefined && v !== null)
       .some((v) => String(v).toLowerCase() === needle),
   );

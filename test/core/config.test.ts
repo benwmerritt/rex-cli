@@ -167,6 +167,12 @@ describe("resolveProfile precedence", () => {
       "REX_STOCKTAKE_USER_ID is out of range; must not exceed Number.MAX_SAFE_INTEGER.",
     );
   });
+
+  it("reports stored stocktake user id values as positive integers", () => {
+    writeFileSync(configPath, '[profiles.a]\napi_key = "K1"\nstocktake_user_id = 0\n');
+    const p = resolveProfile({ profileFlag: "a", env: {}, configPath, cwd: dir });
+    expect(() => resolveStocktakeUserId(p)).toThrow("stocktake_user_id must be a positive integer.");
+  });
 });
 
 describe("saveProfile / setDefaultProfile", () => {
@@ -297,6 +303,26 @@ describe("saveProfile / setDefaultProfile", () => {
       wms_url: "https://wms2/service.asmx?wsdl",
     });
     expect(loadConfig(configPath).profiles.a?.stocktake_user_id).toBeUndefined();
+  });
+
+  it("rejects invalid WMS stocktake user ids before saving", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+
+    for (const stocktakeUserId of [0, -1, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() =>
+        saveWmsProfile(
+          {
+            name: "a",
+            clientId: "CID",
+            username: "wsi",
+            password: "secret",
+            url: "https://wms/service.asmx?wsdl",
+            stocktakeUserId,
+          },
+          configPath,
+        ),
+      ).toThrow(ValidationError);
+    }
   });
 
   it("preserves WMS SOAP credentials when saving the same API key", () => {
