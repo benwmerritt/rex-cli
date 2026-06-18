@@ -99,7 +99,7 @@ export function maybeLoadSession(profile: string): StocktakeSession | undefined 
   }
 }
 
-export function saveSession(session: StocktakeSession, storageKey: string = session.profile): void {
+export function saveSession(session: StocktakeSession, storageKey: string): void {
   const path = sessionPath(storageKey);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.${process.pid}.tmp`;

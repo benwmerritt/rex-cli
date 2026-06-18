@@ -139,13 +139,17 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         }
 
         if (submitLines.length === 0) {
-          clearSession(storageKey);
+          const clearResult = clearLocalSession(storageKey, {
+            warning: "No-variance stocktake was not submitted, but the local session could not be cleared.",
+            hint: "Resolve the local session file issue before starting another stocktake.",
+          });
           ctx.output.result({
             ok: true,
             submitted: false,
             reason: "no_variance",
-            cleared: true,
+            cleared: clearResult.cleared,
             sessionId: session.id,
+            ...(clearResult.warning ? { clear: clearResult.warning } : {}),
           });
           return;
         }
@@ -156,7 +160,10 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         } catch (err) {
           throw submitFailureError(err);
         }
-        const clearResult = clearSubmittedSession(storageKey);
+        const clearResult = clearLocalSession(storageKey, {
+          warning: "Stocktake was submitted, but the local session could not be cleared.",
+          hint: "Resolve the local session file issue before submitting again to avoid duplicate stocktakes.",
+        });
         let auditWarning: { warning: string; error: string } | undefined;
         try {
           appendAudit({
@@ -203,8 +210,16 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         const profile = ctx.profile();
         const storageKey = sessionStorageKey(profile);
         const existed = Boolean(maybeLoadSession(storageKey));
-        clearSession(storageKey);
-        ctx.output.result({ ok: true, aborted: existed });
+        const clearResult = clearLocalSession(storageKey, {
+          warning: "Stocktake abort could not clear the local session.",
+          hint: "Resolve the local session file issue before starting another stocktake.",
+        });
+        ctx.output.result({
+          ok: true,
+          aborted: existed,
+          cleared: clearResult.cleared,
+          ...(clearResult.warning ? { clear: clearResult.warning } : {}),
+        });
       }),
     );
 }
@@ -219,7 +234,10 @@ interface WarningInfo {
   hint?: string;
 }
 
-function clearSubmittedSession(storageKey: string): { cleared: boolean; warning?: WarningInfo } {
+function clearLocalSession(
+  storageKey: string,
+  messages: { warning: string; hint: string },
+): { cleared: boolean; warning?: WarningInfo } {
   try {
     clearSession(storageKey);
     return { cleared: true };
@@ -227,9 +245,9 @@ function clearSubmittedSession(storageKey: string): { cleared: boolean; warning?
     return {
       cleared: false,
       warning: {
-        warning: "Stocktake was submitted, but the local session could not be cleared.",
+        warning: messages.warning,
         error: errorMessage(err),
-        hint: "Resolve the local session file issue before submitting again to avoid duplicate stocktakes.",
+        hint: messages.hint,
       },
     };
   }

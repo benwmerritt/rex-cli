@@ -164,7 +164,7 @@ export function parseCreateStocktakeResponse(text: string, status = 200): Create
   }
 
   const inner = decodeXml(encoded);
-  const result = decodeXml(tag(inner, "Result") ?? "");
+  const result = decodeXml(tag(inner, "Result") ?? "").trim();
   const message = decodeXml(tag(inner, "Message") ?? "").trim();
   if (result.toLowerCase() !== "success") {
     throw new ApiError(`Retail Express WMS stocktake failed: ${message || result || "unknown error"}`, status, {

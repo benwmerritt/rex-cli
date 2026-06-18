@@ -325,4 +325,24 @@ describe("rex stocktake", () => {
       },
     });
   });
+
+  it("reports a warning when abort cannot clear the local session", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    const sessionFile = activeSessionPath();
+    rmSync(sessionFile, { force: true });
+    mkdirSync(sessionFile);
+    writeFileSync(join(sessionFile, "blocker"), "keep directory non-empty");
+
+    const aborted = await runCli(["stocktake", "abort"], retailExpressFixture);
+
+    expect(aborted.err).toBe("");
+    expect(JSON.parse(aborted.out)).toMatchObject({
+      ok: true,
+      aborted: false,
+      cleared: false,
+      clear: {
+        warning: "Stocktake abort could not clear the local session.",
+      },
+    });
+  });
 });

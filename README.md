@@ -129,7 +129,9 @@ Stocktake sessions are also stored per profile, so use the same `--profile` or
 tenant-scoped. Do not reuse the same profile for different Retail Express
 tenants, and do not rely on changing `REX_API_KEY` alone as the tenant boundary.
 WMS credentials persist in profiles across API key changes, so a reused profile
-can submit stocktakes to the wrong WMS tenant.
+can submit stocktakes to the wrong WMS tenant. If you rotate the API key on an
+existing profile, rerun `rex config wms <profile>` with the matching WMS
+credentials before using stocktake again.
 
 `count` updates the staged line if the same product is counted again. Only
 non-zero variances are submitted; zero-variance lines are kept in the review but

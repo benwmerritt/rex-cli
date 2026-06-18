@@ -48,6 +48,7 @@ Profile names may contain only letters, numbers, dot, underscore, and hyphen.
 Invalid characters cause `Unsafe profile name for filesystem path` errors.
 
 ```bash
+rex config wms <profile> --client-id <guid> --username <name> --password <password> --url <url>
 rex stocktake begin --outlet "Gepps X"          # user id can come from config
 rex stocktake count weber q 2200 6              # "we have six"
 rex stocktake count 124001 3                    # exact product id is safest
