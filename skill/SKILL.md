@@ -42,7 +42,8 @@ rex inventory list --filter product_id=124001  # SOH/available per outlet
 
 Use when the human is physically counting products and wants the agent to enter
 counts. Set the outlet once, then treat the last token of each `count` command
-as the absolute counted quantity.
+as the absolute counted quantity. Before starting, WMS credentials must be
+configured on the active profile with `rex config wms <profile>`.
 
 ```bash
 rex stocktake begin --outlet "Gepps X"          # user id can come from config

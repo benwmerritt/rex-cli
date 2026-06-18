@@ -114,6 +114,10 @@ rex --dry-run stocktake submit
 rex stocktake submit
 ```
 
+`rex config wms default` stores WMS credentials on the `default` profile.
+Stocktake sessions are also stored per profile, so use the same `--profile` or
+`REX_PROFILE` from `begin` through `submit`.
+
 `count` updates the staged line if the same product is counted again. Only
 non-zero variances are submitted; zero-variance lines are kept in the review but
 skipped on submit. The WMS account must have the Retail Express Web Services

@@ -26,6 +26,12 @@ rex config wms default \
   --stocktake-user-id <rex-user-id>
 ```
 
+If WMS submit fails after a clean dry run, check the WMS setup first: the Web
+Services Interface licence may not be enabled, credentials may be invalid, the
+WMS URL may be unreachable, or the required licence may be missing. A dry run
+only verifies local product, inventory, and variance calculation; WMS licence,
+credential, and URL problems appear on `rex stocktake submit`.
+
 ## Daily Counting
 
 Start one session for the outlet:
@@ -33,6 +39,10 @@ Start one session for the outlet:
 ```bash
 rex stocktake begin --outlet "Mile End"
 ```
+
+`--user-id` is optional only when `stocktake_user_id` was configured with
+`rex config wms --stocktake-user-id`; otherwise pass `--user-id <rex-user-id>`
+when beginning the session.
 
 Then count products as the operator says them:
 
@@ -77,8 +87,10 @@ not replace the manual Retail Express approval step.
 Remove one staged line:
 
 ```bash
-rex stocktake remove <product-id>
+rex stocktake remove <line-id>
 ```
+
+The value can be the staged line id or product id.
 
 Discard the whole local session:
 
