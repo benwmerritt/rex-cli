@@ -217,21 +217,14 @@ export async function resolveOutlet(client: RexClient, value: string): Promise<O
 
 export async function resolveProduct(client: RexClient, query: string): Promise<ResolvedProduct> {
   const isNumericQuery = /^\d+$/.test(query);
-  const res = await listProducts(client, { pageSize: isNumericQuery ? 250 : 10, query: { search: query } });
+  const res = isNumericQuery
+    ? await listAllProductSearchResults(client, query)
+    : await listProducts(client, { pageSize: 10, query: { search: query } });
 
   if (isNumericQuery) {
     const scanMatches = exactScanMatches(res, query);
     if (scanMatches.length === 1) return normalizeProduct(scanMatches[0]!);
     if (scanMatches.length > 1) throw ambiguousProduct(query, scanMatches);
-    if (res.pageInfo.total > res.nodes.length) {
-      throw new ValidationError(`Product "${query}" matched too many products to safely resolve as a scan.`, {
-        details: {
-          checked: res.nodes.length,
-          total: res.pageInfo.total,
-          hint: "Use a more specific product name, barcode, or SKU.",
-        },
-      });
-    }
 
     try {
       return normalizeProduct(await getProduct(client, query));
@@ -246,6 +239,25 @@ export async function resolveProduct(client: RexClient, query: string): Promise<
   if (res.nodes.length === 1) return normalizeProduct(res.nodes[0]!);
   if (res.nodes.length > 1) throw ambiguousProduct(query, res.nodes);
   throw new ValidationError(`Product not found: ${query}`);
+}
+
+async function listAllProductSearchResults(client: RexClient, query: string): Promise<ListEnvelope<Product>> {
+  const pageSize = 250;
+  let page = 1;
+  let fetched = 0;
+  let total = 0;
+  const nodes: Product[] = [];
+
+  for (;;) {
+    const res = await listProducts(client, { page, pageSize, query: { search: query } });
+    nodes.push(...res.nodes);
+    fetched += res.nodes.length;
+    total = res.pageInfo.total;
+    if (res.nodes.length === 0 || fetched >= total) break;
+    page += 1;
+  }
+
+  return { nodes, pageInfo: { page: 1, pageSize, total } };
 }
 
 export async function fetchOutletInventory(

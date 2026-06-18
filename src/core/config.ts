@@ -180,14 +180,29 @@ export interface SaveWmsProfileInput {
 /** Upsert a profile into config.toml. The first profile saved becomes the default. */
 export function saveProfile(input: SaveProfileInput, configPath: string = configFile()): void {
   const config = loadConfig(configPath);
+  const existing = config.profiles[input.name];
+  const apiKeyChanged = existing?.api_key !== undefined && existing.api_key !== input.apiKey;
   config.profiles[input.name] = {
-    ...config.profiles[input.name],
+    ...(apiKeyChanged ? withoutTenantScopedFields(existing) : existing),
     api_key: input.apiKey,
     base_url: input.baseUrl ?? DEFAULT_BASE_URL,
     version: input.version ?? DEFAULT_VERSION,
   };
   if (!config.defaultProfile) config.defaultProfile = input.name;
   writeConfig(config, configPath);
+}
+
+function withoutTenantScopedFields(profile: RawProfile | undefined): RawProfile | undefined {
+  if (!profile) return undefined;
+  const {
+    wms_client_id: _wmsClientId,
+    wms_username: _wmsUsername,
+    wms_password: _wmsPassword,
+    wms_url: _wmsUrl,
+    stocktake_user_id: _stocktakeUserId,
+    ...rest
+  } = profile;
+  return rest;
 }
 
 export function saveWmsProfile(input: SaveWmsProfileInput, configPath: string = configFile()): void {

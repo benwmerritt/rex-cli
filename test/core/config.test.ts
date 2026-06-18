@@ -218,4 +218,53 @@ describe("saveProfile / setDefaultProfile", () => {
       stocktakeUserId: 4,
     });
   });
+
+  it("preserves WMS SOAP credentials when saving the same API key", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID",
+        username: "wsi",
+        password: "secret",
+        url: "https://wms/service.asmx?wsdl",
+        stocktakeUserId: 4,
+      },
+      configPath,
+    );
+
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+
+    expect(loadConfig(configPath).profiles.a).toMatchObject({
+      api_key: "K1",
+      wms_client_id: "CID",
+      wms_username: "wsi",
+      wms_password: "secret",
+      wms_url: "https://wms/service.asmx?wsdl",
+      stocktake_user_id: 4,
+    });
+  });
+
+  it("clears WMS SOAP credentials when saving a different API key on the same profile", () => {
+    saveProfile({ name: "a", apiKey: "K1" }, configPath);
+    saveWmsProfile(
+      {
+        name: "a",
+        clientId: "CID",
+        username: "wsi",
+        password: "secret",
+        url: "https://wms/service.asmx?wsdl",
+        stocktakeUserId: 4,
+      },
+      configPath,
+    );
+
+    saveProfile({ name: "a", apiKey: "K2" }, configPath);
+
+    expect(loadConfig(configPath).profiles.a).toEqual({
+      api_key: "K2",
+      base_url: DEFAULT_BASE_URL,
+      version: DEFAULT_VERSION,
+    });
+  });
 });

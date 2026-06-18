@@ -287,6 +287,28 @@ describe("stocktake resource helpers", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("resolveProduct prefers exact numeric scan matches on later pages before product-id lookup", async () => {
+    const firstPage = Array.from({ length: 250 }, (_, i) => ({
+      id: 2000 + i,
+      barcode: `OTHER-${i}`,
+      short_description: `Other Product ${i}`,
+    }));
+    const { client, calls } = makeClient((_method, url) => {
+      if (url.includes("/products?")) {
+        const params = new URL(url).searchParams;
+        expect(params.get("page_size")).toBe("250");
+        if (params.get("page_number") === "1") return listResponse(firstPage, 1, 251, 250);
+        return listResponse([{ id: 999, barcode: "124001", short_description: "Scanned Product" }], 2, 251, 250);
+      }
+      throw new Error(`unexpected product-id lookup: ${url}`);
+    });
+
+    const result = await resolveProduct(client, "124001");
+
+    expect(result).toMatchObject({ id: 999, description: "Scanned Product" });
+    expect(calls.map((call) => new URL(call.url).searchParams.get("page_number"))).toEqual(["1", "2"]);
+  });
+
   it("resolveProduct falls back to product-id lookup when a numeric scan has no exact barcode or SKU match", async () => {
     const { client, calls } = makeClient((_method, url) => {
       if (url.includes("/products?")) {
@@ -306,7 +328,7 @@ describe("stocktake resource helpers", () => {
     expect(calls.map((call) => new URL(call.url).pathname)).toEqual(["/v2.1/products", "/v2.1/products/124001"]);
   });
 
-  it("resolveProduct does not fall back to product-id lookup when numeric scan search is truncated", async () => {
+  it("resolveProduct falls back to product-id lookup after exhaustive numeric scan search", async () => {
     const products = Array.from({ length: 250 }, (_, i) => ({
       id: 2000 + i,
       barcode: `OTHER-${i}`,
@@ -314,15 +336,24 @@ describe("stocktake resource helpers", () => {
     }));
     const { client, calls } = makeClient((_method, url) => {
       if (url.includes("/products?")) {
-        return listResponse(products, 1, 251, 250);
+        const params = new URL(url).searchParams;
+        if (params.get("page_number") === "1") return listResponse(products, 1, 251, 250);
+        return listResponse([{ id: 3000, barcode: "OTHER-LAST", short_description: "Other Last Product" }], 2, 251, 250);
       }
-      throw new Error(`unexpected product-id lookup: ${url}`);
+      if (url.endsWith("/products/124001")) {
+        return { id: 124001, short_description: "Product Id Match", sku: "WQ2200" };
+      }
+      throw new Error(`unexpected URL: ${url}`);
     });
 
-    await expect(resolveProduct(client, "124001")).rejects.toThrow(
-      'Product "124001" matched too many products to safely resolve as a scan.',
-    );
-    expect(calls).toHaveLength(1);
+    const result = await resolveProduct(client, "124001");
+
+    expect(result).toMatchObject({ id: 124001, description: "Product Id Match", sku: "WQ2200" });
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      "/v2.1/products",
+      "/v2.1/products",
+      "/v2.1/products/124001",
+    ]);
   });
 
   it("resolveProduct reports ambiguous exact numeric scan matches", async () => {
