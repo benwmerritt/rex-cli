@@ -5,6 +5,7 @@ import { type Profile, resolveProfile } from "../core/config";
 import { Output, type OutputMode } from "../core/output";
 import { createRateLimiter } from "../core/ratelimit";
 import { fetchTransport } from "../core/transport";
+import { requireWmsConfig, WmsClient, type WmsClientLike } from "../core/wms";
 
 export interface GlobalOptions {
   json?: boolean;
@@ -22,6 +23,8 @@ export interface GlobalOptions {
 export interface ContextDeps {
   /** Inject a client (tests use a fake transport); defaults to a live client. */
   clientFactory?: (profile: Profile) => RexClient;
+  /** Inject the WMS SOAP client used by stocktake commands. */
+  wmsClientFactory?: (profile: Profile) => WmsClientLike;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   /** Override the Output sink (tests capture stdout/stderr). */
@@ -56,6 +59,7 @@ export class RunContext {
   private readonly deps: ContextDeps;
   private cachedProfile?: Profile;
   private cachedClient?: RexClient;
+  private cachedWmsClient?: WmsClientLike;
 
   constructor(globals: GlobalOptions, deps: ContextDeps = {}) {
     this.globals = globals;
@@ -92,9 +96,22 @@ export class RunContext {
     }
     return this.cachedClient;
   }
+
+  wmsClient(): WmsClientLike {
+    if (!this.cachedWmsClient) {
+      const profile = this.profile();
+      this.cachedWmsClient = this.deps.wmsClientFactory
+        ? this.deps.wmsClientFactory(profile)
+        : new WmsClient({ config: requireWmsConfig(profile), transport: fetchTransport });
+    }
+    return this.cachedWmsClient;
+  }
 }
 
-export type Handler = (ctx: RunContext, opts: GlobalOptions, args: string[]) => Promise<void> | void;
+/** Commander positional arguments after normalization; omitted optional positionals remain `undefined`. */
+export type PositionalArgs = Array<string | undefined>;
+
+export type Handler = (ctx: RunContext, opts: GlobalOptions, args: PositionalArgs) => Promise<void> | void;
 
 /**
  * Wrap a command handler: build the context from merged global+local options,
@@ -104,7 +121,11 @@ export type Handler = (ctx: RunContext, opts: GlobalOptions, args: string[]) => 
 export function run(deps: ContextDeps, handler: Handler) {
   return async function (this: Command, ...cmdArgs: unknown[]): Promise<void> {
     const command = cmdArgs[cmdArgs.length - 1] as Command;
-    const positional = cmdArgs.slice(0, Math.max(0, cmdArgs.length - 2)) as string[];
+    const positional = cmdArgs
+      .slice(0, Math.max(0, cmdArgs.length - 2))
+      .flatMap((arg) => (Array.isArray(arg) ? arg : [arg]))
+      // Commander passes `undefined` for omitted optional positionals; preserve it to avoid the string "undefined".
+      .map((arg) => (arg === undefined ? undefined : String(arg)));
     const opts = command.optsWithGlobals() as GlobalOptions;
     const ctx = new RunContext(opts, deps);
     try {

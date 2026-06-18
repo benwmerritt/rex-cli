@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { validateSafeProfileName } from "./validation";
 
 /**
  * XDG-aware base directories for rex. These are functions (not constants) so
@@ -31,9 +32,13 @@ export function configFile(): string {
 }
 
 export function tokenCacheFile(profile: string): string {
-  return join(cacheDir(), `${profile}.token.json`);
+  return join(cacheDir(), `${validateSafeProfileName(profile)}.token.json`);
 }
 
 export function rateLimitFile(profile: string): string {
-  return join(cacheDir(), `${profile}.ratelimit.json`);
+  return join(cacheDir(), `${validateSafeProfileName(profile)}.ratelimit.json`);
+}
+
+export function stocktakeSessionFile(profile: string): string {
+  return join(stateDir(), `stocktake.${validateSafeProfileName(profile)}.json`);
 }

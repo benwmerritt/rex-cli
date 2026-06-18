@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { ValidationError } from "./errors";
 import { configDir, configFile } from "./paths";
+import { parseOptionalPositiveInt, validateSafeProfileName } from "./validation";
 
 export const DEFAULT_BASE_URL = "https://api.retailexpress.com.au";
 export const DEFAULT_VERSION = "v2.1";
@@ -13,6 +15,12 @@ export interface Profile {
   apiKey: string;
   baseUrl: string;
   version: string;
+  wmsClientId?: string;
+  wmsUsername?: string;
+  wmsPassword?: string;
+  wmsUrl?: string;
+  stocktakeUserId?: number;
+  stocktakeUserIdEnv?: string;
 }
 
 /** A profile as stored in config.toml (fields optional; defaults applied on resolve). */
@@ -20,6 +28,11 @@ export interface RawProfile {
   api_key?: string;
   base_url?: string;
   version?: string;
+  wms_client_id?: string;
+  wms_username?: string;
+  wms_password?: string;
+  wms_url?: string;
+  stocktake_user_id?: number;
 }
 
 export interface RexConfig {
@@ -67,6 +80,11 @@ export interface ResolveOptions {
   configPath?: string;
 }
 
+function envProfileName(apiKey: string, profileName?: string): string {
+  const digest = createHash("sha256").update(apiKey).digest("hex").slice(0, 12);
+  return profileName ? `${profileName}-env-${digest}` : `env-${digest}`;
+}
+
 /**
  * Resolve the active profile. Precedence:
  *   1. `REX_API_KEY` env — a raw-key override that bypasses config entirely.
@@ -78,11 +96,17 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
 
   const envKey = env.REX_API_KEY?.trim();
   if (envKey) {
+    const envProfile = env.REX_PROFILE?.trim() || undefined;
     return {
-      name: env.REX_PROFILE?.trim() || "env",
+      name: envProfileName(envKey, envProfile),
       apiKey: envKey,
       baseUrl: env.REX_BASE_URL?.trim() || DEFAULT_BASE_URL,
       version: env.REX_VERSION?.trim() || DEFAULT_VERSION,
+      wmsClientId: env.REX_WMS_CLIENT_ID?.trim() || undefined,
+      wmsUsername: env.REX_WMS_USERNAME?.trim() || undefined,
+      wmsPassword: env.REX_WMS_PASSWORD?.trim() || undefined,
+      wmsUrl: env.REX_WMS_URL?.trim() || undefined,
+      stocktakeUserIdEnv: env.REX_STOCKTAKE_USER_ID?.trim() || undefined,
     };
   }
 
@@ -112,7 +136,20 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
     apiKey: raw.api_key,
     baseUrl: raw.base_url?.trim() || DEFAULT_BASE_URL,
     version: raw.version?.trim() || DEFAULT_VERSION,
+    wmsClientId: raw.wms_client_id?.trim() || env.REX_WMS_CLIENT_ID?.trim() || undefined,
+    wmsUsername: raw.wms_username?.trim() || env.REX_WMS_USERNAME?.trim() || undefined,
+    wmsPassword: raw.wms_password?.trim() || env.REX_WMS_PASSWORD?.trim() || undefined,
+    wmsUrl: raw.wms_url?.trim() || env.REX_WMS_URL?.trim() || undefined,
+    stocktakeUserId: raw.stocktake_user_id,
+    stocktakeUserIdEnv: raw.stocktake_user_id === undefined ? env.REX_STOCKTAKE_USER_ID : undefined,
   };
+}
+
+export function resolveStocktakeUserId(profile: Profile): number | undefined {
+  return (
+    parseOptionalPositiveInt(profile.stocktakeUserId, "stocktake_user_id") ??
+    parseOptionalPositiveInt(profile.stocktakeUserIdEnv, "REX_STOCKTAKE_USER_ID")
+  );
 }
 
 /** Write config atomically with 0600 perms (temp file + rename). */
@@ -134,27 +171,78 @@ export interface SaveProfileInput {
   version?: string;
 }
 
+export interface SaveWmsProfileInput {
+  name: string;
+  clientId: string;
+  username: string;
+  password: string;
+  url: string;
+  stocktakeUserId?: number | null;
+}
+
 /** Upsert a profile into config.toml. The first profile saved becomes the default. */
 export function saveProfile(input: SaveProfileInput, configPath: string = configFile()): void {
+  const profileName = validateSafeProfileName(input.name);
   const config = loadConfig(configPath);
-  config.profiles[input.name] = {
+  const existing = config.profiles[profileName];
+  const apiKeyChanged = existing?.api_key !== undefined && existing.api_key !== input.apiKey;
+  config.profiles[profileName] = {
+    ...(apiKeyChanged ? withoutTenantScopedFields(existing) : existing),
     api_key: input.apiKey,
     base_url: input.baseUrl ?? DEFAULT_BASE_URL,
     version: input.version ?? DEFAULT_VERSION,
   };
-  if (!config.defaultProfile) config.defaultProfile = input.name;
+  if (!config.defaultProfile) config.defaultProfile = profileName;
+  writeConfig(config, configPath);
+}
+
+function withoutTenantScopedFields(profile: RawProfile | undefined): RawProfile | undefined {
+  if (!profile) return undefined;
+  const {
+    wms_client_id: _wmsClientId,
+    wms_username: _wmsUsername,
+    wms_password: _wmsPassword,
+    wms_url: _wmsUrl,
+    stocktake_user_id: _stocktakeUserId,
+    ...rest
+  } = profile;
+  return rest;
+}
+
+export function saveWmsProfile(input: SaveWmsProfileInput, configPath: string = configFile()): void {
+  const profileName = validateSafeProfileName(input.name);
+  const config = loadConfig(configPath);
+  const existing = config.profiles[profileName];
+  if (!existing?.api_key) {
+    throw new ValidationError(`Profile "${profileName}" not found or missing api_key.`, {
+      details: { profile: profileName, available: Object.keys(config.profiles) },
+    });
+  }
+  const next: RawProfile = {
+    ...existing,
+    wms_client_id: input.clientId,
+    wms_username: input.username,
+    wms_password: input.password,
+    wms_url: input.url,
+  };
+  if (input.stocktakeUserId === null) delete next.stocktake_user_id;
+  else if (input.stocktakeUserId !== undefined) {
+    next.stocktake_user_id = parseOptionalPositiveInt(input.stocktakeUserId, "stocktake_user_id");
+  }
+  config.profiles[profileName] = next;
   writeConfig(config, configPath);
 }
 
 /** Set the default profile (errors if the profile isn't present). */
 export function setDefaultProfile(name: string, configPath: string = configFile()): void {
+  const profileName = validateSafeProfileName(name);
   const config = loadConfig(configPath);
-  if (!config.profiles[name]) {
-    throw new ValidationError(`Profile "${name}" not found.`, {
+  if (!config.profiles[profileName]) {
+    throw new ValidationError(`Profile "${profileName}" not found.`, {
       details: { available: Object.keys(config.profiles) },
     });
   }
-  config.defaultProfile = name;
+  config.defaultProfile = profileName;
   writeConfig(config, configPath);
 }
 

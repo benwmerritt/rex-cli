@@ -6,7 +6,7 @@ export interface AuditRecord {
   /** ISO timestamp — supplied by the caller (keeps this module clock-free/testable). */
   ts: string;
   profile: string;
-  action: "create" | "update" | "disable" | "enable";
+  action: "create" | "update" | "disable" | "enable" | "stocktake_submit";
   resource: string;
   id?: string | number;
   changed?: string[];

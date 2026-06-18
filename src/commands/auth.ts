@@ -81,6 +81,8 @@ export function registerAuth(program: Command, deps: ContextDeps): void {
           base_url: p.base_url ?? DEFAULT_BASE_URL,
           version: p.version ?? DEFAULT_VERSION,
           api_key: redact(p.api_key),
+          wms: Boolean(p.wms_client_id && p.wms_username && p.wms_password && p.wms_url),
+          stocktake_user_id: p.stocktake_user_id ?? null,
         }));
         ctx.output.result({ nodes, pageInfo: { page: 1, pageSize: nodes.length, total: nodes.length } });
       }),

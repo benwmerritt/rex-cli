@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
 import type { Command } from "commander";
 import { type ContextDeps, run } from "../cli/context";
-import { loadConfig, writeConfig } from "../core/config";
+import { loadConfig, saveWmsProfile, writeConfig } from "../core/config";
+import { ValidationError } from "../core/errors";
 import { configFile } from "../core/paths";
+import { parsePositiveInt, validateSafeProfileName } from "../core/validation";
 
 function redact(key: string | undefined): string {
   if (!key) return "";
@@ -28,7 +30,15 @@ export function registerConfig(program: Command, deps: ContextDeps): void {
       run(deps, (ctx) => {
         const cfg = loadConfig();
         const profiles = Object.fromEntries(
-          Object.entries(cfg.profiles).map(([name, p]) => [name, { ...p, api_key: redact(p.api_key) }]),
+          Object.entries(cfg.profiles).map(([name, p]) => [
+            name,
+            {
+              ...p,
+              api_key: redact(p.api_key),
+              wms_client_id: redact(p.wms_client_id),
+              wms_password: redact(p.wms_password),
+            },
+          ]),
         );
         ctx.output.result({ path: configFile(), defaultProfile: cfg.defaultProfile, profiles });
       }),
@@ -53,4 +63,59 @@ export function registerConfig(program: Command, deps: ContextDeps): void {
         });
       }),
     );
+
+  config
+    .command("wms <profile>")
+    .description("Store WMS SOAP credentials for stocktake workflows")
+    .option("--client-id <guid>", "Retail Express WMS client GUID (or REX_WMS_CLIENT_ID)")
+    .option("--username <name>", "Retail Express WMS username (or REX_WMS_USERNAME)")
+    .option("--password <password>", "Retail Express WMS password (or REX_WMS_PASSWORD)")
+    .option("--url <url>", "Retail Express WMS service URL (or REX_WMS_URL)")
+    .option("--stocktake-user-id <id>", "Retail Express user id for stocktake submissions")
+    .action(
+      run(deps, (ctx, opts, args) => {
+        const rawProfileName = args[0]?.trim();
+        if (!rawProfileName) {
+          throw new ValidationError("WMS profile name is required.", {
+            details: { hint: "Use `rex config wms <profile> ...`." },
+          });
+        }
+        const profileName = validateSafeProfileName(rawProfileName);
+        const env = deps.env ?? process.env;
+        const clientId = optionOrEnv(opts.clientId, env.REX_WMS_CLIENT_ID);
+        const username = optionOrEnv(opts.username, env.REX_WMS_USERNAME);
+        const password = optionOrEnv(opts.password, env.REX_WMS_PASSWORD);
+        const url = optionOrEnv(opts.url, env.REX_WMS_URL);
+        const missing: string[] = [];
+        if (!clientId) missing.push("--client-id or REX_WMS_CLIENT_ID");
+        if (!username) missing.push("--username or REX_WMS_USERNAME");
+        if (!password) missing.push("--password or REX_WMS_PASSWORD");
+        if (!url) missing.push("--url or REX_WMS_URL");
+        if (missing.length > 0) {
+          throw new ValidationError("WMS SOAP credentials are required for `rex config wms`.", {
+            details: {
+              missing,
+              hint: "Pass flags or export REX_WMS_CLIENT_ID, REX_WMS_USERNAME, REX_WMS_PASSWORD, and REX_WMS_URL.",
+            },
+          });
+        }
+        const stocktakeUserId =
+          opts.stocktakeUserId === undefined ? undefined : parsePositiveInt(opts.stocktakeUserId, "--stocktake-user-id");
+        saveWmsProfile({
+          name: profileName,
+          clientId: clientId!,
+          username: username!,
+          password: password!,
+          url: url!,
+          stocktakeUserId,
+        });
+        ctx.output.result({ ok: true, profile: profileName, config: configFile(), wms: true });
+      }),
+    );
+}
+
+function optionOrEnv(option: unknown, envValue: string | undefined): string | undefined {
+  const optionText = typeof option === "string" ? option.trim() : "";
+  const envText = envValue?.trim() ?? "";
+  return optionText || envText || undefined;
 }
