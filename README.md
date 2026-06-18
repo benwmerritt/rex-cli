@@ -1,92 +1,88 @@
 # rex
 
-A command-line tool for the **Retail Express POS REST API (v2.1)**, built for agentic workflows.
-`rex` lets an AI agent — or you — read and (carefully) write the Retail Express catalogue: products,
-inventory, pricing, suppliers, outlets, customers, orders, purchase orders, transfers, and loyalty.
+A command-line tool for the Retail Express POS REST API (v2.1). Read and write your
+catalogue — products, inventory, pricing, customers, orders, suppliers, purchase
+orders, transfers, and loyalty — from the terminal or scripts.
 
-It is **agent-first**: JSON by default, non-interactive, file-based inputs, and strong write guardrails.
-
-> Status: early development. The core spine (auth, client, products) lands first; the remaining
-> resources follow the same pattern.
-
-## Why a CLI
-
-A CLI composes trivially from a Claude Code skill (`Bash(rex:*)`), pipes to `jq`, and needs no running
-server. The one wrinkle — each invocation is a fresh process, so the 60-minute Retail Express bearer
-token is cached to disk between calls — is handled for you.
+Output is JSON by default, and writes have guardrails (dry-run, price gating,
+soft-delete, an audit log).
 
 ## Install
 
+Building requires [Bun](https://bun.sh).
+
 ```bash
-# from source (requires Bun)
+git clone https://github.com/benwmerritt/rex-cli && cd rex-cli
 bun install
-bun run compile        # produces a standalone ./rex binary
-cp rex ~/.local/bin/rex
-
-# or run directly during development
-bun run dev -- product list
+bun run compile          # builds a standalone ./rex binary
+cp rex ~/.local/bin/     # put it on your PATH
 ```
 
-## Quick start
+During development you can run from source: `bun run dev -- product list`.
+
+## Setup
+
+Authenticate once; the key is stored in `~/.config/rex/config.toml` (chmod 600):
 
 ```bash
-rex auth login --profile show-go     # stores the API key in ~/.config/rex/config.toml (0600)
-rex auth test                        # verifies the key + token round-trip
-rex product list --page-size 5       # JSON to stdout
-rex product get 4711 --human         # pretty table for eyeballing
+rex auth login mystore --key <api-key>
+rex auth test            # -> {"ok":true,"outlets":3}
 ```
 
-## Command grammar
+Alternatively set `REX_API_KEY` in your environment or a project `.env` file.
 
-```
-rex <resource> <action> [args] [flags]
-rex product list | get <id> | search <q> | create | update | disable <id>
-rex inventory list ...
-rex auth login | test | whoami | list | default
-rex config init | path | show
-rex api <METHOD> <path> [--data ...]      # raw passthrough for un-wrapped endpoints
+## Usage
+
+```bash
+rex product list --search weber --page-size 20
+rex product get 124001
+rex product list --all > products.ndjson      # all pages, one JSON object per line
+rex inventory list --filter product_id=124001
+rex order list --include items,payments
+rex api GET outlets                            # raw call to any endpoint
 ```
 
-Global flags: `--json` (default) / `--human`, `--profile`, `--dry-run`, `--allow-price`,
-`--page` / `--page-size` / `--all`, `--verbose`.
+Commands follow `rex <resource> <action>`. Resources: `product` (p), `inventory`
+(inv), `customer` (c), `order` (o), `supplier` (sup), `outlet`, `product-type`
+(pt), `attribute` (attr), `barcode`, `purchase-order` (po), `transfer` (xfer),
+`loyalty-reason`, `loyalty-history`, `stock-reason`.
+
+`rex --help` lists everything; `rex <resource> --help` shows a resource's actions.
 
 ## Output
 
-- **JSON by default** to stdout. Lists return `{ "nodes": [...], "pageInfo": { ... } }`; `--all`
-  streams NDJSON. Single records return the object.
-- Errors go to **stderr** as `{ "error": { "code", "message", "details" } }` with a stable exit code
-  (0 ok · 2 usage · 3 auth · 4 ratelimit · 5 notfound · 6 validation · 7 api · 8 write-gated).
-- `--human` renders tables instead.
+- JSON to stdout. Lists are `{ "nodes": [...], "pageInfo": { page, pageSize, total } }`; single records are the object.
+- `--human` prints tables instead.
+- Errors go to stderr as JSON with a stable exit code: `2` usage, `3` auth, `4` rate-limit, `5` not-found, `6` validation, `7` api, `8` write-blocked.
+- `list` returns one page; use `--page`/`--page-size`, or `--all` to stream every page as NDJSON.
 
-## Writing safely
+## Writing
 
-`rex` mutates a **live** retail system (changes propagate to POS and the Shopify connector), so writes
-are deliberately cautious:
+Writes change a live system, so they're cautious by default:
 
-- **Partial updates only.** `update` re-fetches the current record, diffs it, and sends only the fields
-  that actually changed.
-- **`--dry-run` on every write** prints the diff and sends nothing.
-- **Price changes are gated** behind `--allow-price` — descriptive fields write freely, pricing does not.
-- **Soft-disable, not delete.** `rex product disable <id>` maps to the API's soft-disable; there is no
-  hard delete.
-- Every write is appended (before → after) to a local JSONL **audit log** under
-  `~/.local/state/rex/`.
+```bash
+rex product update 124001 --set brand=Weber --dry-run   # preview the diff, send nothing
+rex product update 124001 --set brand=Weber             # apply
+rex product update --file changes.json                  # batch: JSON array of {id, ...fields}
+rex product disable 124001                              # soft-disable (not a hard delete)
+```
+
+- `update` re-fetches the record and sends only the fields that changed.
+- Price fields require `--allow-price`.
+- Every write is appended to `~/.local/state/rex/audit.jsonl`.
 
 ## Configuration
 
-```toml
-# ~/.config/rex/config.toml   (chmod 600)
-default_profile = "show-go"
+`~/.config/rex/config.toml` holds named profiles. Pick one with `--profile`, a
+`REX_PROFILE` env var, or a `.rex.toml` in your project. Resolution order:
+`--profile` → `REX_API_KEY`/`REX_PROFILE` env → `.rex.toml` → default profile.
 
-[profiles.show-go]
-api_key = "..."
-base_url = "https://api.retailexpress.com.au"
-version = "v2.1"
-```
+## Agent skill
 
-A per-project `./.rex.toml` can pin which profile to use. Resolution order:
-`--profile` flag → `REX_API_KEY` / `REX_PROFILE` env → `.rex.toml` (cwd and parents) →
-`default_profile`.
+The repo includes an agent skill under `skill/` so AI coding agents (Claude Code,
+Pi) can use `rex`. Install it by copying `skill/` into your agent's skills
+directory (e.g. `~/.claude/skills/rex-cli/`). Regenerate the command reference
+with `bun run docs`.
 
 ## License
 

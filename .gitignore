@@ -1,8 +1,9 @@
 node_modules/
 dist/
 
-# Compiled single-file binary (produced by `bun run compile`)
+# Compiled single-file binaries (produced by `bun run compile` / cross-compiles)
 /rex
+/rex-*
 
 # Local profile selection / any stray credential or token caches
 .rex.toml
