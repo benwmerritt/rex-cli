@@ -27,10 +27,14 @@ export interface CrudSpec {
   /** Singular name for audit/errors; defaults to `name`. */
   resource?: string;
   description: string;
-  /** Wire create/update/disable. */
-  writable?: boolean;
+  /** Wire a `get <id>` command. Default true. */
+  getById?: boolean;
   /** Wire `search` + `--search` on list. */
   searchable?: boolean;
+  /** Individual write verbs (default false). */
+  create?: boolean;
+  update?: boolean;
+  disable?: boolean;
   priceFields?: ReadonlySet<string>;
   /** Add resource-specific list flags. */
   listOptions?: (cmd: Command) => Command;
@@ -44,6 +48,11 @@ function buildQuery(opts: Record<string, unknown>): Record<string, QueryValue> {
   const query: Record<string, QueryValue> = {};
   if (opts.search) query.search = opts.search as string;
   if (opts.includeInventory) query.include_inventory = true;
+  if (opts.modifiedSince) query.modified_since = opts.modifiedSince as string;
+  if (opts.updatedSince) query.updated_since = opts.updatedSince as string;
+  for (const name of (opts.include as string[] | undefined) ?? []) {
+    query[`include_${name}`] = true;
+  }
   for (const pair of (opts.filter as string[] | undefined) ?? []) {
     const idx = pair.indexOf("=");
     if (idx === -1) throw new ValidationError(`Invalid --filter "${pair}" (expected key=value).`);
@@ -136,14 +145,16 @@ export function registerCrud(program: Command, deps: ContextDeps, spec: CrudSpec
     }),
   );
 
-  group
-    .command("get <id>")
-    .description(`Get a ${spec.resource ?? spec.name} by id`)
-    .action(
-      run(deps, async (ctx, _opts, args) => {
-        ctx.output.result(await getResource(ctx.client(), spec.path, args[0]!));
-      }),
-    );
+  if (spec.getById !== false) {
+    group
+      .command("get <id>")
+      .description(`Get a ${spec.resource ?? spec.name} by id`)
+      .action(
+        run(deps, async (ctx, _opts, args) => {
+          ctx.output.result(await getResource(ctx.client(), spec.path, args[0]!));
+        }),
+      );
+  }
 
   if (spec.searchable) {
     group
@@ -165,14 +176,14 @@ export function registerCrud(program: Command, deps: ContextDeps, spec: CrudSpec
       );
   }
 
-  if (spec.writable) {
-    const writeFlags = (cmd: Command) =>
-      cmd
-        .option("--set <kv...>", "field assignment key=value (or key:=json)")
-        .option("--file <path>", "JSON array/object of records to write")
-        .option("--stdin", "read NDJSON records from stdin")
-        .option("--description-file <path>", "read long_description from a file");
+  const writeFlags = (cmd: Command) =>
+    cmd
+      .option("--set <kv...>", "field assignment key=value (or key:=json)")
+      .option("--file <path>", "JSON array/object of records to write")
+      .option("--stdin", "read NDJSON records from stdin")
+      .option("--description-file <path>", "read long_description from a file");
 
+  if (spec.update) {
     writeFlags(
       group
         .command("update [id]")
@@ -186,7 +197,9 @@ export function registerCrud(program: Command, deps: ContextDeps, spec: CrudSpec
         ctx.output.result(summarize(results, records.length));
       }),
     );
+  }
 
+  if (spec.create) {
     writeFlags(group.command("create").description(`Create ${spec.path}`)).action(
       run(deps, async (ctx, opts, args) => {
         const records = await gatherRecords(opts, args, false);
@@ -196,7 +209,9 @@ export function registerCrud(program: Command, deps: ContextDeps, spec: CrudSpec
         ctx.output.result(summarize(results, records.length));
       }),
     );
+  }
 
+  if (spec.disable) {
     group
       .command("disable <id>")
       .description(`Soft-disable a ${spec.resource ?? spec.name} (not a hard delete)`)

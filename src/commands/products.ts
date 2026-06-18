@@ -11,8 +11,10 @@ export function registerProduct(program: Command, deps: ContextDeps): void {
     path: "products",
     resource: "product",
     description: "Manage products",
-    writable: true,
     searchable: true,
+    create: true,
+    update: true,
+    disable: true,
     priceFields: PRICE_FIELDS,
     listOptions: (cmd) => cmd.option("--include-inventory", "embed basic inventory in each product"),
   });
