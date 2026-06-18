@@ -82,6 +82,13 @@ method. The CLI accepts absolute counted quantities, calculates the outlet
 variance from current inventory, then submits a stocktake in Retail Express
 awaiting manual authorisation.
 
+### Handling timeouts and network failures
+
+Timeouts or network failures during `rex stocktake submit` do not guarantee WMS
+did not receive the request. Do not blindly retry a submit after an unclear
+failure; first check Retail Express for an awaiting-authorisation stocktake, or
+contact support, before resubmitting to avoid duplicate stocktakes.
+
 Configure WMS once on an existing REST profile:
 
 ```bash

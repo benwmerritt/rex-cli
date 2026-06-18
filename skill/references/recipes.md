@@ -70,6 +70,12 @@ If a product name is ambiguous, stop and ask the operator to choose from the
 JSON `matches`. Prefer product ids or barcodes when scanning. Never use direct
 stock adjustments for this workflow unless explicitly requested.
 
+Safety:
+- Use a dedicated tenant-scoped profile for each Retail Express tenant.
+- If `rex stocktake submit` times out, check WMS for an existing
+  awaiting-authorisation stocktake before retrying; the request may have reached
+  the server.
+
 ## Find then act by id
 
 ```bash

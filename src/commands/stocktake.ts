@@ -154,7 +154,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         } catch (err) {
           throw submitFailureError(err);
         }
-        clearSession(storageKey);
+        const clearResult = clearSubmittedSession(storageKey);
         let auditWarning: { warning: string; error: string } | undefined;
         try {
           appendAudit({
@@ -173,18 +173,21 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
           });
         } catch (err) {
           auditWarning = {
-            warning: "Stocktake was submitted and the session was cleared, but audit logging failed.",
+            warning: clearResult.cleared
+              ? "Stocktake was submitted and the session was cleared, but audit logging failed."
+              : "Stocktake was submitted, but the session could not be cleared and audit logging failed.",
             error: errorMessage(err),
           };
         }
         ctx.output.result({
           ok: true,
           submitted: true,
-          cleared: true,
+          cleared: clearResult.cleared,
           sessionId: session.id,
           submitLines: submitLines.length,
           skippedZeroVariance: session.lines.length - submitLines.length,
           result,
+          ...(clearResult.warning ? { clear: clearResult.warning } : {}),
           ...(auditWarning ? { audit: auditWarning } : {}),
         });
       }),
@@ -208,34 +211,86 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+interface WarningInfo {
+  warning: string;
+  error: string;
+  hint?: string;
+}
+
+function clearSubmittedSession(storageKey: string): { cleared: boolean; warning?: WarningInfo } {
+  try {
+    clearSession(storageKey);
+    return { cleared: true };
+  } catch (err) {
+    return {
+      cleared: false,
+      warning: {
+        warning: "Stocktake was submitted, but the local session could not be cleared.",
+        error: errorMessage(err),
+        hint: "Resolve the local session file issue before submitting again to avoid duplicate stocktakes.",
+      },
+    };
+  }
+}
+
+type SubmitFailureKind = "ambiguous" | "retryable";
+
 function submitFailureError(err: unknown): RexError {
-  const suffix = "Local stocktake session was kept for retry.";
+  const kind = classifySubmitFailure(err);
+  const suffix =
+    kind === "ambiguous"
+      ? "Local stocktake session was kept, but WMS may have processed the request."
+      : "Local stocktake session was kept for retry.";
   if (err instanceof ApiError) {
     return new ApiError(`${err.message} ${suffix}`, err.status, {
       cause: err,
-      details: submitFailureDetails(err),
+      details: submitFailureDetails(err, kind),
     });
   }
   if (err instanceof RexError) {
     return new RexError(err.code, `${err.message} ${suffix}`, err.exitCode, {
       cause: err,
-      details: submitFailureDetails(err),
+      details: submitFailureDetails(err, kind),
     });
   }
   return new RexError("generic", `${errorMessage(err)} ${suffix}`, EXIT.GENERIC, {
     cause: err,
-    details: submitFailureDetails(err),
+    details: submitFailureDetails(err, kind),
   });
 }
 
-function submitFailureDetails(err: unknown): Record<string, unknown> {
-  const stocktakeSession = {
-    preserved: true,
-    hint: "The local stocktake session was not cleared. Resolve the WMS issue and retry `rex stocktake submit`, or run `rex stocktake abort` to discard it.",
-  };
+function classifySubmitFailure(err: unknown): SubmitFailureKind {
+  if (err instanceof ApiError && (err.status === 0 || err.status >= 500)) return "ambiguous";
+  return hasAmbiguousNetworkSignal(err) ? "ambiguous" : "retryable";
+}
+
+function submitFailureDetails(err: unknown, kind: SubmitFailureKind): Record<string, unknown> {
+  const stocktakeSession =
+    kind === "ambiguous"
+      ? {
+          preserved: true,
+          warning: "WMS may have processed this stocktake before the failure was reported.",
+          hint: "Check WMS for an awaiting-authorisation stocktake before retrying to avoid duplicate stocktakes.",
+        }
+      : {
+          preserved: true,
+          hint: "The local stocktake session was not cleared. Resolve the WMS issue and retry `rex stocktake submit`, or run `rex stocktake abort` to discard it.",
+        };
   if (!(err instanceof RexError) || err.details === undefined) return { stocktakeSession };
   if (isRecord(err.details)) return { ...err.details, stocktakeSession };
   return { originalDetails: err.details, stocktakeSession };
+}
+
+function hasAmbiguousNetworkSignal(value: unknown, depth = 0): boolean {
+  if (depth > 4 || !isRecord(value)) return false;
+  const code = typeof value.code === "string" ? value.code.toUpperCase() : undefined;
+  if (code && ["ETIMEDOUT", "ECONNRESET", "ECONNABORTED", "EPIPE"].includes(code)) return true;
+  const name = typeof value.name === "string" ? value.name : "";
+  const message = typeof value.message === "string" ? value.message : "";
+  if (/(abort|timeout|timed out|connection reset|econnreset|etimedout)/i.test(`${name} ${message}`)) {
+    return true;
+  }
+  return hasAmbiguousNetworkSignal(value.cause, depth + 1);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

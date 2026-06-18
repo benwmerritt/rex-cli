@@ -181,6 +181,20 @@ describe("saveProfile / setDefaultProfile", () => {
     expect(mode).toBe(0o600);
   });
 
+  it("accepts safe profile names with allowed characters", () => {
+    saveProfile({ name: "tenant-a.env_1", apiKey: "K1" }, configPath);
+    const cfg = loadConfig(configPath);
+    expect(cfg.defaultProfile).toBe("tenant-a.env_1");
+    expect(cfg.profiles["tenant-a.env_1"]?.api_key).toBe("K1");
+  });
+
+  it("rejects unsafe profile names before saving", () => {
+    for (const profile of ["", ".", "..", "../tenant", "tenant/one", "tenant\\one", "tenant..one", "tenant one", "tenant:one"]) {
+      expect(() => saveProfile({ name: profile, apiKey: "K1" }, configPath)).toThrow(ValidationError);
+      expect(loadConfig(configPath)).toEqual({ profiles: {} });
+    }
+  });
+
   it("does not clobber the default when adding a second profile", () => {
     saveProfile({ name: "a", apiKey: "K1" }, configPath);
     saveProfile({ name: "b", apiKey: "K2" }, configPath);

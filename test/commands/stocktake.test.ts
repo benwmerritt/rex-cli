@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildProgram } from "../../src/cli/program";
@@ -93,6 +93,13 @@ function retailExpressFixture(method: string, url: string): unknown {
   throw new Error(`unexpected ${method} ${url}`);
 }
 
+function activeSessionPath(): string {
+  const dir = join(stateDir, "rex");
+  const sessions = readdirSync(dir).filter((name) => name.startsWith("stocktake.") && name.endsWith(".json"));
+  expect(sessions).toHaveLength(1);
+  return join(dir, sessions[0]!);
+}
+
 describe("rex stocktake", () => {
   it("stages a counted quantity and previews the WMS stocktake variance payload", async () => {
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
@@ -165,7 +172,25 @@ describe("rex stocktake", () => {
     expect(JSON.parse(originalTenant.out)).toMatchObject({ profile: "tenant", outletId: 3, userId: 4 });
   });
 
-  it("keeps the session and explains retry after WMS submit failure", async () => {
+  it("does not load an env-mode stocktake session after the API key changes", async () => {
+    const firstTenant = { REX_API_KEY: "K1", REX_STOCKTAKE_USER_ID: "4" };
+    const secondTenant = { REX_API_KEY: "K2", REX_STOCKTAKE_USER_ID: "4" };
+
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture, undefined, firstTenant);
+
+    const wrongTenant = await runCli(["stocktake", "review"], retailExpressFixture, undefined, secondTenant);
+    expect(wrongTenant.out).toBe("");
+    expect(JSON.parse(wrongTenant.err).error).toMatchObject({
+      code: "validation",
+      message: "No active stocktake session.",
+    });
+
+    process.exitCode = 0;
+    const originalTenant = await runCli(["stocktake", "review"], retailExpressFixture, undefined, firstTenant);
+    expect(JSON.parse(originalTenant.out)).toMatchObject({ outletId: 3, userId: 4 });
+  });
+
+  it("keeps the session and warns before retry after ambiguous WMS submit failure", async () => {
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
     await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
 
@@ -182,15 +207,50 @@ describe("rex stocktake", () => {
     expect(submitted.out).toBe("");
     expect(JSON.parse(submitted.err).error).toMatchObject({
       code: "api",
-      message: "Retail Express WMS returned HTTP 500. Local stocktake session was kept for retry.",
+      message: "Retail Express WMS returned HTTP 500. Local stocktake session was kept, but WMS may have processed the request.",
       details: {
         body: "server unavailable",
         stocktakeSession: {
           preserved: true,
-          hint: "The local stocktake session was not cleared. Resolve the WMS issue and retry `rex stocktake submit`, or run `rex stocktake abort` to discard it.",
+          warning: "WMS may have processed this stocktake before the failure was reported.",
+          hint: "Check WMS for an awaiting-authorisation stocktake before retrying to avoid duplicate stocktakes.",
         },
       },
     });
+
+    process.exitCode = 0;
+    const review = await runCli(["stocktake", "review"], retailExpressFixture);
+    expect(JSON.parse(review.out)).toMatchObject({ totalLines: 1, submitLines: 1 });
+  });
+
+  it("warns about duplicate risk after a status-0 WMS timeout", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const wms: WmsClientLike = {
+      createStocktake: async () => {
+        throw new ApiError("Retail Express WMS request timed out after 25ms.", 0, { cause });
+      },
+    };
+
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, wms);
+
+    expect(submitted.out).toBe("");
+    const error = JSON.parse(submitted.err).error;
+    expect(error).toMatchObject({
+      code: "api",
+      message: "Retail Express WMS request timed out after 25ms. Local stocktake session was kept, but WMS may have processed the request.",
+      details: {
+        stocktakeSession: {
+          preserved: true,
+          warning: "WMS may have processed this stocktake before the failure was reported.",
+          hint: "Check WMS for an awaiting-authorisation stocktake before retrying to avoid duplicate stocktakes.",
+        },
+      },
+    });
+    expect(error.details.stocktakeSession.hint).toContain("duplicate");
+    expect(error.details.stocktakeSession.warning).toContain("processed");
 
     process.exitCode = 0;
     const review = await runCli(["stocktake", "review"], retailExpressFixture);
@@ -240,5 +300,31 @@ describe("rex stocktake", () => {
     const review = await runCli(["stocktake", "review"], retailExpressFixture);
     expect(JSON.parse(review.err).error.code).toBe("validation");
     process.exitCode = 0;
+  });
+
+  it("reports WMS success when the submitted session cannot be cleared", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+    const sessionFile = activeSessionPath();
+
+    const wms: WmsClientLike = {
+      createStocktake: async () => {
+        rmSync(sessionFile, { force: true });
+        mkdirSync(sessionFile);
+        writeFileSync(join(sessionFile, "blocker"), "keep directory non-empty");
+        return { ok: true, result: "Success" };
+      },
+    };
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, wms);
+
+    expect(submitted.err).toBe("");
+    expect(JSON.parse(submitted.out)).toMatchObject({
+      ok: true,
+      submitted: true,
+      cleared: false,
+      clear: {
+        warning: "Stocktake was submitted, but the local session could not be cleared.",
+      },
+    });
   });
 });

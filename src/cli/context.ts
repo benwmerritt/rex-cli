@@ -124,6 +124,7 @@ export function run(deps: ContextDeps, handler: Handler) {
     const positional = cmdArgs
       .slice(0, Math.max(0, cmdArgs.length - 2))
       .flatMap((arg) => (Array.isArray(arg) ? arg : [arg]))
+      // Commander passes `undefined` for omitted optional positionals; preserve it to avoid the string "undefined".
       .map((arg) => (arg === undefined ? undefined : String(arg)));
     const opts = command.optsWithGlobals() as GlobalOptions;
     const ctx = new RunContext(opts, deps);

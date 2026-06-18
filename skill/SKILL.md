@@ -59,6 +59,13 @@ line if the same product is counted again. Do not create direct stock
 adjustments for this workflow; Retail Express manual authorisation remains the
 control point.
 
+### Safety notes for agent-driven workflows
+
+- Use a dedicated tenant-scoped profile for each Retail Express tenant.
+- A failed response from `rex stocktake submit` does not prove WMS did not
+  process the request. Blind retry can duplicate stocktakes; check Retail
+  Express or contact support before resubmitting.
+
 `list` returns ONE page; use `--all` (streams NDJSON) for everything — choosing
 wrong is the #1 reason a result looks empty.
 

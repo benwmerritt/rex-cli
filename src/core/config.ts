@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { ValidationError } from "./errors";
 import { configDir, configFile } from "./paths";
-import { parseOptionalPositiveInt } from "./validation";
+import { parseOptionalPositiveInt, validateSafeProfileName } from "./validation";
 
 export const DEFAULT_BASE_URL = "https://api.retailexpress.com.au";
 export const DEFAULT_VERSION = "v2.1";
@@ -179,16 +179,17 @@ export interface SaveWmsProfileInput {
 
 /** Upsert a profile into config.toml. The first profile saved becomes the default. */
 export function saveProfile(input: SaveProfileInput, configPath: string = configFile()): void {
+  const profileName = validateSafeProfileName(input.name);
   const config = loadConfig(configPath);
-  const existing = config.profiles[input.name];
+  const existing = config.profiles[profileName];
   const apiKeyChanged = existing?.api_key !== undefined && existing.api_key !== input.apiKey;
-  config.profiles[input.name] = {
+  config.profiles[profileName] = {
     ...(apiKeyChanged ? withoutTenantScopedFields(existing) : existing),
     api_key: input.apiKey,
     base_url: input.baseUrl ?? DEFAULT_BASE_URL,
     version: input.version ?? DEFAULT_VERSION,
   };
-  if (!config.defaultProfile) config.defaultProfile = input.name;
+  if (!config.defaultProfile) config.defaultProfile = profileName;
   writeConfig(config, configPath);
 }
 

@@ -18,7 +18,17 @@ Get these WMS details from Retail Express support or the account admin:
 - Retail Express user id for stocktake submissions
 - Confirmation that the Web Services Interface licence is enabled
 
-Store them on the existing profile:
+Use a separate tenant-scoped profile for each Retail Express tenant. Stocktake
+sessions and WMS credentials are stored per profile, so reusing a profile across
+tenants can carry stale state forward. See the
+[README Stocktake section](../../README.md#stocktake) for the tenant isolation
+guidance.
+
+Profile names may contain letters, numbers, dot, underscore, and hyphen. Valid
+examples: `mile-end`, `mile_end`. Invalid examples: `mile end`, `tenant/one`;
+these are rejected with `Unsafe profile name for filesystem path`.
+
+Store the WMS details on the existing profile:
 
 ```bash
 rex config wms default \
@@ -97,6 +107,11 @@ Services Interface licence may not be enabled, credentials may be invalid, the
 WMS URL may be unreachable, or the required licence may be missing. A dry run
 only verifies local product, inventory, and variance calculation; WMS licence,
 credential, and URL problems appear on `rex stocktake submit`.
+
+Timeouts and network failures do not prove the SOAP request failed to reach WMS.
+Before retrying, check Retail Express for an awaiting-authorisation stocktake.
+If it is unclear whether WMS processed the request, contact support before
+resubmitting to avoid duplicates.
 
 ## Recovery
 
