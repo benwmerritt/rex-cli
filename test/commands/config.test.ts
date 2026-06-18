@@ -40,7 +40,7 @@ describe("rex config wms", () => {
   it("stores WMS credentials from environment fallbacks", async () => {
     saveProfile({ name: "default", apiKey: "K" });
 
-    const result = await runCli(["config", "wms", "default", "--stocktake-user-id", "4"], {
+    const result = await runCli(["config", "wms", " default ", "--stocktake-user-id", "4"], {
       REX_WMS_CLIENT_ID: "CID",
       REX_WMS_USERNAME: "wsi",
       REX_WMS_PASSWORD: "secret",
@@ -72,6 +72,55 @@ describe("rex config wms", () => {
       "--password or REX_WMS_PASSWORD",
       "--url or REX_WMS_URL",
     ]);
+    process.exitCode = 0;
+  });
+
+  it("rejects a blank WMS profile name before saving", async () => {
+    const result = await runCli([
+      "config",
+      "wms",
+      "   ",
+      "--client-id",
+      "CID",
+      "--username",
+      "wsi",
+      "--password",
+      "secret",
+      "--url",
+      "https://wms/service.asmx?wsdl",
+    ]);
+
+    expect(JSON.parse(result.err).error).toMatchObject({
+      code: "validation",
+      message: "WMS profile name is required.",
+      details: { hint: "Use `rex config wms <profile> ...`." },
+    });
+    process.exitCode = 0;
+  });
+
+  it("reports stocktake user id as a positive integer", async () => {
+    saveProfile({ name: "default", apiKey: "K" });
+
+    const result = await runCli([
+      "config",
+      "wms",
+      "default",
+      "--client-id",
+      "CID",
+      "--username",
+      "wsi",
+      "--password",
+      "secret",
+      "--url",
+      "https://wms/service.asmx?wsdl",
+      "--stocktake-user-id",
+      "0",
+    ]);
+
+    expect(JSON.parse(result.err).error).toMatchObject({
+      code: "validation",
+      message: "--stocktake-user-id must be a positive integer.",
+    });
     process.exitCode = 0;
   });
 });

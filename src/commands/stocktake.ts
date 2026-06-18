@@ -2,7 +2,8 @@ import type { Command } from "commander";
 import { type ContextDeps, run } from "../cli/context";
 import { appendAudit } from "../core/audit";
 import { resolveStocktakeUserId } from "../core/config";
-import { ValidationError } from "../core/errors";
+import { ApiError, EXIT, RexError, ValidationError } from "../core/errors";
+import { parsePositiveInt } from "../core/validation";
 import {
   clearSession,
   createSession,
@@ -19,15 +20,6 @@ import {
   type ResolvedProduct,
   type StocktakeSession,
 } from "../resources/stocktake";
-
-function intOption(value: unknown, name: string): number | undefined {
-  if (value === undefined) return undefined;
-  const text = String(value).trim();
-  if (!/^\d+$/.test(text)) throw new ValidationError(`${name} must be a positive integer.`);
-  const n = Number.parseInt(text, 10);
-  if (!Number.isInteger(n) || n <= 0) throw new ValidationError(`${name} must be a positive integer.`);
-  return n;
-}
 
 export function registerStocktake(program: Command, deps: ContextDeps): void {
   const stocktake = program.command("stocktake").alias("st").description("Agent-friendly stocktake counts");
@@ -46,7 +38,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
             details: { hint: "Run `rex stocktake review`, `rex stocktake submit`, or `rex stocktake abort`." },
           });
         }
-        const explicitUserId = intOption(opts.userId, "--user-id");
+        const explicitUserId = opts.userId === undefined ? undefined : parsePositiveInt(opts.userId, "--user-id");
         const userId = explicitUserId ?? resolveStocktakeUserId(profile);
         if (!userId) {
           throw new ValidationError("Stocktake user id is required.", {
@@ -148,7 +140,12 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
           return;
         }
 
-        const result = await ctx.wmsClient().createStocktake(payload);
+        let result: unknown;
+        try {
+          result = await ctx.wmsClient().createStocktake(payload);
+        } catch (err) {
+          throw submitFailureError(err);
+        }
         clearSession(profile.name);
         let auditWarning: { warning: string; error: string } | undefined;
         try {
@@ -200,6 +197,40 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function submitFailureError(err: unknown): RexError {
+  const suffix = "Local stocktake session was kept for retry.";
+  if (err instanceof ApiError) {
+    return new ApiError(`${err.message} ${suffix}`, err.status, {
+      cause: err,
+      details: submitFailureDetails(err),
+    });
+  }
+  if (err instanceof RexError) {
+    return new RexError(err.code, `${err.message} ${suffix}`, err.exitCode, {
+      cause: err,
+      details: submitFailureDetails(err),
+    });
+  }
+  return new RexError("generic", `${errorMessage(err)} ${suffix}`, EXIT.GENERIC, {
+    cause: err,
+    details: submitFailureDetails(err),
+  });
+}
+
+function submitFailureDetails(err: unknown): Record<string, unknown> {
+  const stocktakeSession = {
+    preserved: true,
+    hint: "The local stocktake session was not cleared. Resolve the WMS issue and retry `rex stocktake submit`, or run `rex stocktake abort` to discard it.",
+  };
+  if (!(err instanceof RexError) || err.details === undefined) return { stocktakeSession };
+  if (isRecord(err.details)) return { ...err.details, stocktakeSession };
+  return { originalDetails: err.details, stocktakeSession };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function upsertAndSave(

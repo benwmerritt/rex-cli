@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { buildProgram } from "../../src/cli/program";
 import type { AuthProvider } from "../../src/core/auth";
 import { RexClient } from "../../src/core/client";
+import { ApiError } from "../../src/core/errors";
 import { Output } from "../../src/core/output";
 import type { Transport } from "../../src/core/transport";
 import type { CreateStocktakeInput, WmsClientLike } from "../../src/core/wms";
@@ -132,6 +133,38 @@ describe("rex stocktake", () => {
 
     expect(JSON.parse(started.out)).toMatchObject({ ok: true, session: { outletId: 3, userId: 4 } });
     expect(started.err).toBe("");
+  });
+
+  it("keeps the session and explains retry after WMS submit failure", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+
+    const wms: WmsClientLike = {
+      createStocktake: async () => {
+        throw new ApiError("Retail Express WMS returned HTTP 500.", 500, {
+          details: { body: "server unavailable" },
+        });
+      },
+    };
+
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, wms);
+
+    expect(submitted.out).toBe("");
+    expect(JSON.parse(submitted.err).error).toMatchObject({
+      code: "api",
+      message: "Retail Express WMS returned HTTP 500. Local stocktake session was kept for retry.",
+      details: {
+        body: "server unavailable",
+        stocktakeSession: {
+          preserved: true,
+          hint: "The local stocktake session was not cleared. Resolve the WMS issue and retry `rex stocktake submit`, or run `rex stocktake abort` to discard it.",
+        },
+      },
+    });
+
+    process.exitCode = 0;
+    const review = await runCli(["stocktake", "review"], retailExpressFixture);
+    expect(JSON.parse(review.out)).toMatchObject({ totalLines: 1, submitLines: 1 });
   });
 
   it("reports invalid stocktake env fallback when begin needs it", async () => {

@@ -4,6 +4,7 @@ import { type ContextDeps, run } from "../cli/context";
 import { loadConfig, saveWmsProfile, writeConfig } from "../core/config";
 import { ValidationError } from "../core/errors";
 import { configFile } from "../core/paths";
+import { parsePositiveInt } from "../core/validation";
 
 function redact(key: string | undefined): string {
   if (!key) return "";
@@ -73,6 +74,12 @@ export function registerConfig(program: Command, deps: ContextDeps): void {
     .option("--stocktake-user-id <id>", "Retail Express user id for stocktake submissions")
     .action(
       run(deps, (ctx, opts, args) => {
+        const profileName = args[0]?.trim();
+        if (!profileName) {
+          throw new ValidationError("WMS profile name is required.", {
+            details: { hint: "Use `rex config wms <profile> ...`." },
+          });
+        }
         const env = deps.env ?? process.env;
         const clientId = optionOrEnv(opts.clientId, env.REX_WMS_CLIENT_ID);
         const username = optionOrEnv(opts.username, env.REX_WMS_USERNAME);
@@ -92,16 +99,16 @@ export function registerConfig(program: Command, deps: ContextDeps): void {
           });
         }
         const stocktakeUserId =
-          opts.stocktakeUserId === undefined ? undefined : parsePositiveInt(opts.stocktakeUserId as string);
+          opts.stocktakeUserId === undefined ? undefined : parsePositiveInt(opts.stocktakeUserId, "--stocktake-user-id");
         saveWmsProfile({
-          name: args[0]!,
+          name: profileName,
           clientId: clientId!,
           username: username!,
           password: password!,
           url: url!,
           stocktakeUserId,
         });
-        ctx.output.result({ ok: true, profile: args[0], config: configFile(), wms: true });
+        ctx.output.result({ ok: true, profile: profileName, config: configFile(), wms: true });
       }),
     );
 }
@@ -110,12 +117,4 @@ function optionOrEnv(option: unknown, envValue: string | undefined): string | un
   const optionText = typeof option === "string" ? option.trim() : "";
   const envText = envValue?.trim() ?? "";
   return optionText || envText || undefined;
-}
-
-function parsePositiveInt(value: string): number {
-  const text = value.trim();
-  if (!/^\d+$/.test(text)) throw new ValidationError("--stocktake-user-id must be an integer.");
-  const n = Number.parseInt(text, 10);
-  if (n <= 0) throw new ValidationError("--stocktake-user-id must be a positive integer.");
-  return n;
 }
