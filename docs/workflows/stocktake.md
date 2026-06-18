@@ -106,7 +106,8 @@ If WMS submit fails after a clean dry run, check the WMS setup first: the Web
 Services Interface licence may not be enabled, credentials may be invalid, the
 WMS URL may be unreachable, or the required licence may be missing. A dry run
 only verifies local product, inventory, and variance calculation; WMS licence,
-credential, and URL problems appear on `rex stocktake submit`.
+credential, stocktake user id, and URL problems appear on
+`rex stocktake submit`.
 
 Timeouts and network failures do not prove the SOAP request failed to reach WMS.
 Before retrying, check Retail Express for an awaiting-authorisation stocktake.

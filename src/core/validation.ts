@@ -1,7 +1,11 @@
 import { ValidationError } from "./errors";
 
+function textValue(value: unknown): string {
+  return String(value).trim();
+}
+
 export function parsePositiveInt(value: unknown, paramName: string): number {
-  const text = String(value).trim();
+  const text = textValue(value);
   if (!/^\d+$/.test(text)) throw new ValidationError(`${paramName} must be a positive integer.`);
   const parsed = Number.parseInt(text, 10);
   if (parsed <= 0) {
@@ -15,7 +19,7 @@ export function parsePositiveInt(value: unknown, paramName: string): number {
 
 export function parseOptionalPositiveInt(value: unknown, paramName: string): number | undefined {
   if (value === undefined) return undefined;
-  const text = String(value).trim();
+  const text = textValue(value);
   if (text === "") return undefined;
   return parsePositiveInt(text, paramName);
 }

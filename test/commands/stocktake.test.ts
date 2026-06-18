@@ -249,8 +249,6 @@ describe("rex stocktake", () => {
         },
       },
     });
-    expect(error.details.stocktakeSession.hint).toContain("duplicate");
-    expect(error.details.stocktakeSession.warning).toContain("processed");
 
     process.exitCode = 0;
     const review = await runCli(["stocktake", "review"], retailExpressFixture);

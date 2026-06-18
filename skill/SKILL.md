@@ -10,7 +10,7 @@ allowed-tools: Bash(rex:*), Bash(jq:*)
 non-interactive, with strong write guardrails. Stocktake submit uses the legacy
 Retail Express WMS SOAP API because REST does not expose stocktake creation. If
 `rex` isn't on PATH, build it from this repo root:
-`bun run compile && cp rex ~/.local/bin/rex`.
+`bun install && bun run compile && cp rex ~/.local/bin/rex`.
 
 ## Output contract (read first)
 
