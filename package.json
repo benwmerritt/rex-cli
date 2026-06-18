@@ -19,7 +19,8 @@
     "build": "bun build src/rex.ts --outfile dist/rex.js --target node",
     "compile": "bun build src/rex.ts --compile --outfile rex",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "docs": "bun run scripts/generate-docs.ts"
   },
   "dependencies": {
     "commander": "^12.1.0",
