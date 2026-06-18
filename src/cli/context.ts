@@ -108,6 +108,7 @@ export class RunContext {
   }
 }
 
+/** Commander positional arguments after normalization; omitted optional positionals remain `undefined`. */
 export type PositionalArgs = Array<string | undefined>;
 
 export type Handler = (ctx: RunContext, opts: GlobalOptions, args: PositionalArgs) => Promise<void> | void;

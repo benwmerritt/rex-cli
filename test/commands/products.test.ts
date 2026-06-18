@@ -4,8 +4,9 @@ import { run, type PositionalArgs } from "../../src/cli/context";
 import { buildProgram } from "../../src/cli/program";
 import type { AuthProvider } from "../../src/core/auth";
 import { RexClient } from "../../src/core/client";
-import { Output, type Writer } from "../../src/core/output";
+import { Output } from "../../src/core/output";
 import type { Transport } from "../../src/core/transport";
+import { capture } from "../helpers/capture";
 
 const auth: AuthProvider = { ensureToken: async () => "T", invalidate: () => {} };
 
@@ -22,12 +23,6 @@ function fakeClient(handler: (method: string, url: string) => unknown) {
     transport,
     sleep: async () => {},
   });
-}
-
-function capture() {
-  const chunks: string[] = [];
-  const writer: Writer = { write: (s) => void chunks.push(s) };
-  return { writer, text: () => chunks.join("") };
 }
 
 async function runCli(argv: string[], handler: (method: string, url: string) => unknown) {

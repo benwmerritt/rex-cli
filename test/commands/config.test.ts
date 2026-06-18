@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildProgram } from "../../src/cli/program";
 import { loadConfig, saveProfile } from "../../src/core/config";
-import { Output, type Writer } from "../../src/core/output";
+import { Output } from "../../src/core/output";
+import { capture } from "../helpers/capture";
 
 let configHome: string;
 let previousConfigHome: string | undefined;
@@ -22,12 +23,6 @@ afterEach(() => {
   rmSync(configHome, { recursive: true, force: true });
   process.exitCode = 0;
 });
-
-function capture() {
-  const chunks: string[] = [];
-  const writer: Writer = { write: (s) => void chunks.push(s) };
-  return { writer, text: () => chunks.join("") };
-}
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv = {}) {
   const out = capture();

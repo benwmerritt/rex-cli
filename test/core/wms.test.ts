@@ -6,6 +6,7 @@ import {
   WmsClient,
   type WmsConfig,
 } from "../../src/core/wms";
+import { ApiError } from "../../src/core/errors";
 import type { Transport } from "../../src/core/transport";
 
 const config: WmsConfig = {
@@ -39,6 +40,46 @@ describe("WMS stocktake SOAP", () => {
       </CreateStocktakeResponse>
     </soap:Body></soap:Envelope>`);
     expect(res).toEqual({ ok: true, result: "Success" });
+  });
+
+  it("reports a non-success CreateStocktake result as an API error", () => {
+    try {
+      parseCreateStocktakeResponse(
+        `<soap:Envelope><soap:Body>
+          <CreateStocktakeResponse xmlns="http://retailexpress.com.au/">
+            <CreateStocktakeResult>&lt;Response&gt;&lt;Result&gt;Error&lt;/Result&gt;&lt;Message&gt;Bad stocktake&lt;/Message&gt;&lt;/Response&gt;</CreateStocktakeResult>
+          </CreateStocktakeResponse>
+        </soap:Body></soap:Envelope>`,
+        202,
+      );
+      throw new Error("Expected parseCreateStocktakeResponse to throw.");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(202);
+      expect((err as ApiError).message).toBe("Retail Express WMS stocktake failed: Bad stocktake");
+      expect((err as ApiError).details).toEqual({ result: "Error", message: "Bad stocktake" });
+    }
+  });
+
+  it("reports a missing inner Result element as an API error", () => {
+    expect(() =>
+      parseCreateStocktakeResponse(`<soap:Envelope><soap:Body>
+        <CreateStocktakeResponse xmlns="http://retailexpress.com.au/">
+          <CreateStocktakeResult>&lt;Response&gt;&lt;Message&gt;No result&lt;/Message&gt;&lt;/Response&gt;</CreateStocktakeResult>
+        </CreateStocktakeResponse>
+      </soap:Body></soap:Envelope>`),
+    ).toThrow("Retail Express WMS stocktake failed: No result");
+  });
+
+  it("reports malformed XML without a CreateStocktakeResult as an API error", () => {
+    try {
+      parseCreateStocktakeResponse("<soap:Envelope><soap:Body><not-xml", 200);
+      throw new Error("Expected parseCreateStocktakeResponse to throw.");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).message).toBe("Retail Express WMS response did not include CreateStocktakeResult.");
+      expect((err as ApiError).details).toEqual({ body: "<soap:Envelope><soap:Body><not-xml" });
+    }
   });
 
   it("posts to the .asmx URL rather than the WSDL URL", async () => {

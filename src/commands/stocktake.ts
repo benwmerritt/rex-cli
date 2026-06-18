@@ -100,8 +100,10 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .description("Remove a staged stocktake line by line id or product id")
     .action(
       run(deps, (ctx, _opts, args) => {
+        const lineId = args[0];
+        if (!lineId) throw new ValidationError("Stocktake line id is required.");
         const session = loadSession(ctx.profile().name);
-        const result = removeLine(session, args[0]!);
+        const result = removeLine(session, lineId);
         saveSession(result.session);
         ctx.output.result({ ok: true, removed: result.line, summary: summarizeSession(result.session) });
       }),
