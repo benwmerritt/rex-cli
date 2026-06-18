@@ -71,11 +71,14 @@ export function topLevelField(path: string): string {
 }
 
 /** Split changed paths into price-gated vs freely-writable. */
-export function classifyChanged(changedKeys: string[]): { price: string[]; safe: string[] } {
+export function classifyChanged(
+  changedKeys: string[],
+  priceFields: ReadonlySet<string> = PRICE_FIELDS,
+): { price: string[]; safe: string[] } {
   const price: string[] = [];
   const safe: string[] = [];
   for (const key of changedKeys) {
-    if (PRICE_FIELDS.has(topLevelField(key))) price.push(key);
+    if (priceFields.has(topLevelField(key))) price.push(key);
     else safe.push(key);
   }
   return { price, safe };
