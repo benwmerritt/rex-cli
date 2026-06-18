@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -77,6 +78,11 @@ export interface ResolveOptions {
   configPath?: string;
 }
 
+function envProfileName(apiKey: string): string {
+  const digest = createHash("sha256").update(apiKey).digest("hex").slice(0, 12);
+  return `env-${digest}`;
+}
+
 /**
  * Resolve the active profile. Precedence:
  *   1. `REX_API_KEY` env — a raw-key override that bypasses config entirely.
@@ -90,7 +96,7 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
   const envKey = env.REX_API_KEY?.trim();
   if (envKey) {
     return {
-      name: env.REX_PROFILE?.trim() || "env",
+      name: env.REX_PROFILE?.trim() || envProfileName(envKey),
       apiKey: envKey,
       baseUrl: env.REX_BASE_URL?.trim() || DEFAULT_BASE_URL,
       version: env.REX_VERSION?.trim() || DEFAULT_VERSION,

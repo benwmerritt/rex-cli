@@ -41,8 +41,8 @@ rex stocktake begin --outlet "Mile End"
 ```
 
 `--user-id` is optional only when `stocktake_user_id` was configured with
-`rex config wms --stocktake-user-id`; otherwise pass `--user-id <rex-user-id>`
-when beginning the session.
+`rex config wms <profile> --stocktake-user-id <rex-user-id>`; otherwise pass
+`--user-id <rex-user-id>` when beginning the session.
 
 Then count products as the operator says them:
 

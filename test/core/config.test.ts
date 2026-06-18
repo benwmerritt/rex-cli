@@ -50,7 +50,7 @@ describe("parseConfig", () => {
 describe("resolveProfile precedence", () => {
   beforeEach(() => writeFileSync(configPath, SAMPLE));
 
-  it("REX_API_KEY env overrides everything (ephemeral profile + defaults)", () => {
+  it("REX_API_KEY env overrides everything with a key-derived ephemeral profile", () => {
     const p = resolveProfile({
       env: {
         REX_API_KEY: "ENVKEY",
@@ -64,7 +64,6 @@ describe("resolveProfile precedence", () => {
       cwd: dir,
     });
     expect(p).toMatchObject({
-      name: "env",
       apiKey: "ENVKEY",
       baseUrl: DEFAULT_BASE_URL,
       version: DEFAULT_VERSION,
@@ -74,6 +73,23 @@ describe("resolveProfile precedence", () => {
       wmsUrl: "https://wms",
       stocktakeUserId: 4,
     });
+    expect(p.name).toMatch(/^env-[a-f0-9]{12}$/);
+    expect(p.name).not.toContain("ENVKEY");
+
+    const sameKey = resolveProfile({ env: { REX_API_KEY: "ENVKEY" }, configPath, cwd: dir });
+    const otherKey = resolveProfile({ env: { REX_API_KEY: "OTHER_ENVKEY" }, configPath, cwd: dir });
+    expect(sameKey.name).toBe(p.name);
+    expect(otherKey.name).not.toBe(p.name);
+  });
+
+  it("REX_PROFILE keeps explicit profile naming for REX_API_KEY env auth", () => {
+    const p = resolveProfile({
+      env: { REX_API_KEY: "ENVKEY", REX_PROFILE: "tenant-a" },
+      configPath,
+      cwd: dir,
+    });
+    expect(p.name).toBe("tenant-a");
+    expect(p.apiKey).toBe("ENVKEY");
   });
 
   it("--profile flag selects a named profile from config", () => {

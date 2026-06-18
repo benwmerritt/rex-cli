@@ -116,7 +116,9 @@ rex stocktake submit
 
 `rex config wms default` stores WMS credentials on the `default` profile.
 Stocktake sessions are also stored per profile, so use the same `--profile` or
-`REX_PROFILE` from `begin` through `submit`.
+`REX_PROFILE` from `begin` through `submit`. Do not rely on switching
+`REX_API_KEY` alone as the operator-facing tenant boundary; explicit profiles
+avoid the security risk of shared or confused stocktake sessions across tenants.
 
 `count` updates the staged line if the same product is counted again. Only
 non-zero variances are submitted; zero-variance lines are kept in the review but

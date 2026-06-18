@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { Command } from "commander";
+import { run, type PositionalArgs } from "../../src/cli/context";
 import { buildProgram } from "../../src/cli/program";
 import type { AuthProvider } from "../../src/core/auth";
 import { RexClient } from "../../src/core/client";
@@ -82,6 +84,47 @@ describe("rex product (golden)", () => {
       changed: ["short_description"],
       dryRun: true,
     });
+  });
+
+  it('update treats an omitted optional [id] as undefined, not "undefined"', async () => {
+    let seenArgs: PositionalArgs | undefined;
+    const out = capture();
+    const err = capture();
+    const program = new Command();
+    program.exitOverride();
+    program
+      .command("product")
+      .command("update [id]")
+      .option("--set <kv...>")
+      .option("--dry-run")
+      .action(
+        run({ env: { REX_API_KEY: "K" }, output: new Output({ mode: "json" }, out.writer, err.writer) }, (_ctx, _opts, args) => {
+          seenArgs = args;
+        }),
+      );
+
+    await program.parseAsync(["node", "rex", "product", "update", "--set", "short_description=New", "--dry-run"]);
+
+    expect(seenArgs?.[0]).toBeUndefined();
+    expect(seenArgs?.[0]).not.toBe("undefined");
+  });
+
+  it("update rejects missing ids when optional [id] is omitted and --set has no id", async () => {
+    const prevExit = process.exitCode;
+    let calls = 0;
+
+    const { out, err } = await runCli(["product", "update", "--set", "short_description=New", "--dry-run"], () => {
+      calls += 1;
+      throw new Error("handler should not be called without an id");
+    });
+
+    expect(calls).toBe(0);
+    expect(out).toBe("");
+    expect(JSON.parse(err).error).toMatchObject({
+      code: "validation",
+      message: "Provide an <id>, --file, or --stdin.",
+    });
+    process.exitCode = prevExit;
   });
 
   it("update gates a price change without --allow-price (exit 8)", async () => {

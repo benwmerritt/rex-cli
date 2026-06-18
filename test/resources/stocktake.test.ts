@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { AuthProvider } from "../../src/core/auth";
 import { RexClient } from "../../src/core/client";
+import { resolveProfile } from "../../src/core/config";
 import { ValidationError } from "../../src/core/errors";
 import type { Transport } from "../../src/core/transport";
 import {
@@ -162,6 +163,18 @@ describe("stocktake resource helpers", () => {
     }
   });
 
+  it("isolates API-key-only stocktake sessions by derived profile name", () => {
+    const firstTenant = resolveProfile({ env: { REX_API_KEY: "TENANT_A_KEY" } });
+    const secondTenant = resolveProfile({ env: { REX_API_KEY: "TENANT_B_KEY" } });
+
+    expect(firstTenant.name).toMatch(/^env-[a-f0-9]{12}$/);
+    expect(firstTenant.name).not.toContain("TENANT_A_KEY");
+    expect(secondTenant.name).toMatch(/^env-[a-f0-9]{12}$/);
+    expect(secondTenant.name).not.toContain("TENANT_B_KEY");
+    expect(firstTenant.name).not.toBe(secondTenant.name);
+    expect(sessionPath(firstTenant.name)).not.toBe(sessionPath(secondTenant.name));
+  });
+
   it("fetchOutletInventory searches later inventory pages for the outlet row", async () => {
     const firstPage = Array.from({ length: 250 }, (_, i) => ({
       product_id: 124001,
@@ -194,7 +207,9 @@ describe("stocktake resource helpers", () => {
   it("resolveProduct prefers exact numeric barcode and SKU matches before product-id lookup", async () => {
     const { client, calls } = makeClient((_method, url) => {
       if (url.includes("/products?")) {
-        return listResponse([{ id: 999, barcode: "124001", short_description: "Scanned Product" }], 1, 1, 10);
+        const params = new URL(url).searchParams;
+        expect(params.get("page_size")).toBe("250");
+        return listResponse([{ id: 999, barcode: "124001", short_description: "Scanned Product" }], 1, 1, 250);
       }
       throw new Error(`unexpected product-id lookup: ${url}`);
     });
@@ -209,7 +224,9 @@ describe("stocktake resource helpers", () => {
   it("resolveProduct falls back to product-id lookup when a numeric scan has no exact barcode or SKU match", async () => {
     const { client, calls } = makeClient((_method, url) => {
       if (url.includes("/products?")) {
-        return listResponse([{ id: 999, barcode: "OTHER", short_description: "Other Product" }], 1, 1, 10);
+        const params = new URL(url).searchParams;
+        expect(params.get("page_size")).toBe("250");
+        return listResponse([{ id: 999, barcode: "OTHER", short_description: "Other Product" }], 1, 1, 250);
       }
       if (url.endsWith("/products/124001")) {
         return { id: 124001, short_description: "Product Id Match", sku: "WQ2200" };
@@ -223,9 +240,30 @@ describe("stocktake resource helpers", () => {
     expect(calls.map((call) => new URL(call.url).pathname)).toEqual(["/v2.1/products", "/v2.1/products/124001"]);
   });
 
+  it("resolveProduct does not fall back to product-id lookup when numeric scan search is truncated", async () => {
+    const products = Array.from({ length: 250 }, (_, i) => ({
+      id: 2000 + i,
+      barcode: `OTHER-${i}`,
+      short_description: `Other Product ${i}`,
+    }));
+    const { client, calls } = makeClient((_method, url) => {
+      if (url.includes("/products?")) {
+        return listResponse(products, 1, 251, 250);
+      }
+      throw new Error(`unexpected product-id lookup: ${url}`);
+    });
+
+    await expect(resolveProduct(client, "124001")).rejects.toThrow(
+      'Product "124001" matched too many products to safely resolve as a scan.',
+    );
+    expect(calls).toHaveLength(1);
+  });
+
   it("resolveProduct reports ambiguous exact numeric scan matches", async () => {
     const { client } = makeClient((_method, url) => {
       if (url.includes("/products?")) {
+        const params = new URL(url).searchParams;
+        expect(params.get("page_size")).toBe("250");
         return listResponse(
           [
             { id: 1, barcode: "123456", short_description: "Barcode Match" },
@@ -233,7 +271,7 @@ describe("stocktake resource helpers", () => {
           ],
           1,
           2,
-          10,
+          250,
         );
       }
       throw new Error(`unexpected product-id lookup: ${url}`);

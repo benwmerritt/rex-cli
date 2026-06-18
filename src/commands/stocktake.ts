@@ -146,20 +146,28 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
 
         const result = await ctx.wmsClient().createStocktake(payload);
         clearSession(profile.name);
-        appendAudit({
-          ts: new Date().toISOString(),
-          profile: profile.name,
-          action: "stocktake_submit",
-          resource: "stocktake",
-          id: session.id,
-          changed: submitLines.map((line) => String(line.productId)),
-          before: session.lines.map((line) => ({
-            productId: line.productId,
-            counted: line.counted,
-            currentStock: line.currentStock,
-          })),
-          after: payload,
-        });
+        let auditWarning: { warning: string; error: string } | undefined;
+        try {
+          appendAudit({
+            ts: new Date().toISOString(),
+            profile: profile.name,
+            action: "stocktake_submit",
+            resource: "stocktake",
+            id: session.id,
+            changed: submitLines.map((line) => String(line.productId)),
+            before: session.lines.map((line) => ({
+              productId: line.productId,
+              counted: line.counted,
+              currentStock: line.currentStock,
+            })),
+            after: payload,
+          });
+        } catch (err) {
+          auditWarning = {
+            warning: "Stocktake was submitted and the session was cleared, but audit logging failed.",
+            error: errorMessage(err),
+          };
+        }
         ctx.output.result({
           ok: true,
           submitted: true,
@@ -168,6 +176,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
           submitLines: submitLines.length,
           skippedZeroVariance: session.lines.length - submitLines.length,
           result,
+          ...(auditWarning ? { audit: auditWarning } : {}),
         });
       }),
     );
@@ -183,6 +192,10 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         ctx.output.result({ ok: true, aborted: existed });
       }),
     );
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function upsertAndSave(

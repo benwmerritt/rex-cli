@@ -9,8 +9,8 @@ allowed-tools: Bash(rex:*), Bash(jq:*)
 `rex` is an agent-first CLI over the Retail Express REST API: JSON by default,
 non-interactive, with strong write guardrails. Stocktake submit uses the legacy
 Retail Express WMS SOAP API because REST does not expose stocktake creation. If
-`rex` isn't on PATH, build it:
-`cd ~/dev/projects/rex-cli && bun run compile && cp rex ~/.local/bin/`.
+`rex` isn't on PATH, build it from this repo root:
+`bun run compile && cp rex ~/.local/bin/rex`.
 
 ## Output contract (read first)
 

@@ -195,12 +195,22 @@ export async function resolveOutlet(client: RexClient, value: string): Promise<O
 }
 
 export async function resolveProduct(client: RexClient, query: string): Promise<ResolvedProduct> {
-  const res = await listProducts(client, { pageSize: 10, query: { search: query } });
+  const isNumericQuery = /^\d+$/.test(query);
+  const res = await listProducts(client, { pageSize: isNumericQuery ? 250 : 10, query: { search: query } });
 
-  if (/^\d+$/.test(query)) {
+  if (isNumericQuery) {
     const scanMatches = exactScanMatches(res, query);
     if (scanMatches.length === 1) return normalizeProduct(scanMatches[0]!);
     if (scanMatches.length > 1) throw ambiguousProduct(query, scanMatches);
+    if (res.pageInfo.total > res.nodes.length) {
+      throw new ValidationError(`Product "${query}" matched too many products to safely resolve as a scan.`, {
+        details: {
+          checked: res.nodes.length,
+          total: res.pageInfo.total,
+          hint: "Use a more specific product name, barcode, or SKU.",
+        },
+      });
+    }
 
     try {
       return normalizeProduct(await getProduct(client, query));

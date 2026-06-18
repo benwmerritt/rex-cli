@@ -140,9 +140,16 @@ describe("rex stocktake", () => {
     };
     const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, wms);
     expect(submissions).toBe(1);
-    expect(JSON.parse(submitted.err).error.code).toBe("generic");
+    expect(submitted.err).toBe("");
+    expect(JSON.parse(submitted.out)).toMatchObject({
+      ok: true,
+      submitted: true,
+      cleared: true,
+      audit: {
+        warning: "Stocktake was submitted and the session was cleared, but audit logging failed.",
+      },
+    });
 
-    process.exitCode = 0;
     const review = await runCli(["stocktake", "review"], retailExpressFixture);
     expect(JSON.parse(review.err).error.code).toBe("validation");
     process.exitCode = 0;
