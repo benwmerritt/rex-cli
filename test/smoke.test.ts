@@ -6,11 +6,21 @@ describe("program", () => {
     expect(buildProgram().name()).toBe("rex");
   });
 
-  it("registers the top-level commands", () => {
+  it("registers the top-level commands and resources", () => {
     const names = buildProgram().commands.map((c) => c.name());
-    expect(names).toContain("auth");
-    expect(names).toContain("config");
-    expect(names).toContain("api");
+    for (const n of ["auth", "config", "api", "product", "customer", "order", "inventory", "supplier", "outlet"]) {
+      expect(names).toContain(n);
+    }
+  });
+
+  it("inventory is list-only (no get/create), products are full CRUD", () => {
+    const cmds = buildProgram().commands;
+    const sub = (name: string) =>
+      cmds.find((c) => c.name() === name)!.commands.map((c) => c.name());
+    expect(sub("inventory")).toEqual(["list"]);
+    expect(sub("product")).toContain("disable");
+    expect(sub("customer")).toContain("update");
+    expect(sub("customer")).not.toContain("disable");
   });
 
   it("exposes global options including --human and --all", () => {
