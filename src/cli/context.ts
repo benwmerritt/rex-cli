@@ -1,5 +1,6 @@
-import type { Command } from "commander";
+import { type Command, InvalidArgumentError } from "commander";
 import { createAuth } from "../core/auth";
+import { EXIT } from "../core/errors";
 import { RexClient } from "../core/client";
 import { type Profile, resolveProfile } from "../core/config";
 import { Output, type OutputMode } from "../core/output";
@@ -136,9 +137,38 @@ export function run(deps: ContextDeps, handler: Handler) {
   };
 }
 
-/** Commander option coercer for integer flags. */
+/**
+ * Commander option coercer for integer flags. Rejects non-integers (including
+ * "2026.5", which parseInt would silently truncate) with a clean usage error —
+ * a plain Error here would escape commander as a raw stack trace.
+ */
+function invalidNumber(expected: string, value: string): never {
+  const err = new InvalidArgumentError(`expected ${expected}, got "${value}".`);
+  err.exitCode = EXIT.USAGE;
+  throw err;
+}
+
+/** Number("") and Number("  ") are 0 — blanks must not coerce silently. */
+function toNumber(value: string): number {
+  return value.trim() === "" ? Number.NaN : Number(value);
+}
+
 export function asInt(value: string): number {
-  const n = Number.parseInt(value, 10);
-  if (Number.isNaN(n)) throw new Error(`expected an integer, got "${value}"`);
+  const n = toNumber(value);
+  if (!Number.isSafeInteger(n)) invalidNumber("an integer", value);
+  return n;
+}
+
+/** Commander option coercer for strictly positive integer flags. */
+export function asPositiveInt(value: string): number {
+  const n = toNumber(value);
+  if (!Number.isSafeInteger(n) || n <= 0) invalidNumber("a positive integer", value);
+  return n;
+}
+
+/** Commander option coercer for non-negative decimal flags (e.g. hours). */
+export function asNonNegativeNumber(value: string): number {
+  const n = toNumber(value);
+  if (!Number.isFinite(n) || n < 0) invalidNumber("a non-negative number", value);
   return n;
 }

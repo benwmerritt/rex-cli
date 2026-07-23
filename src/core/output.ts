@@ -47,6 +47,11 @@ export class Output {
     this.out.write((this.mode === "human" ? toHuman(record) : JSON.stringify(record)) + "\n");
   }
 
+  /** Diagnostic progress to stderr — never part of the stdout contract. */
+  progress(message: string): void {
+    this.err.write(message + "\n");
+  }
+
   /** Render an error to stderr (always JSON, even in --human). Returns the exit code. */
   error(err: unknown): number {
     const rexErr = toRexError(err);

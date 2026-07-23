@@ -381,6 +381,30 @@ Create stockadjustmentreasons
 | `--stdin` | read NDJSON records from stdin |
 | `--description-file <path>` | read long_description from a file |
 
+### `rex sales sync`
+
+Mirror orders into the local sales cache (resumable; incremental after first run)
+
+| Flag | Description |
+| --- | --- |
+| `--full` | re-stream every order instead of incremental catch-up |
+
+### `rex sales report`
+
+Aggregate cached sales: revenue (headline), units, ex-GST gross profit
+
+| Flag | Description |
+| --- | --- |
+| `--fy <year>` | Australian financial year (FY2026 = 2025-07-01..2026-07-01) |
+| `--from <date>` | start date YYYY-MM-DD (Adelaide-local) |
+| `--to <date>` | end date YYYY-MM-DD, inclusive (Adelaide-local) |
+| `--last <window>` | trailing window: <n>d | <n>w | <n>m |
+| `--by <dims>` | comma-separated: salesperson,outlet,product,month,day |
+| `--sort <key>` | revenue | units | profit (default revenue, desc) |
+| `--top <n>` | limit to the top n rows |
+| `--product <id>` | restrict to one product's lines |
+| `--max-stale <hours>` | fail with exit 9 if the cache is older than this |
+
 ### `rex stocktake begin`
 
 Start a local stocktake session for one outlet

@@ -32,9 +32,10 @@ A pricing layer on a Product — **Standard** (a percentage adjustment) or
 Product (`price_groups`, `fixed_price_groups`), NOT a separate resource.
 
 **Promotion**:
-Not a first-class object. A sale = writing promotional/web prices (or Fixed
-Price Group values) on Products and restoring them later.
-_Avoid_: campaign, deal (as if they were resources).
+Not a first-class object. Running a promotion = writing promotional/web prices
+(or Fixed Price Group values) on Products and restoring them later.
+_Avoid_: campaign, deal (as if they were resources), "sale" (reserved for
+revenue events).
 
 **Soft-disable**:
 `rex product disable` (DELETE) hides a Product from POS, reports, and the web
@@ -54,3 +55,30 @@ definition, not a separate endpoint.
 **Audit log**:
 The local append-only JSONL record (`~/.local/state/rex/audit.jsonl`) of every
 write rex performs, before→after. The forensic trail, not a REX concept.
+
+**Sale**:
+A revenue event: a committed Order — status not Cancelled, Quote, or
+Incomplete — valued at `order_total` (inc GST, freight included), dated by
+`created_on`. Awaiting Payment counts (accrual basis). Returns appear as
+negative Orders / line quantities and net off; payments are irrelevant to
+Sale figures.
+_Avoid_: transaction, invoice; "sale" meaning a Promotion or Quote.
+
+**Salesperson**:
+The Retail Express user credited with an Order (`sales_person`). The unit of
+"who sold it" in stats; not the same as a WMS or CLI user.
+_Avoid_: salesman, staff member, rep.
+
+**Gross Profit**:
+Per line: ex-GST revenue (`order_item_total / (1 + tax_rate)`, where
+`tax_rate` is a decimal fraction — `0.1` = 10% GST) minus COGS (per-unit
+`cogs_ex` × quantity) as recorded at time of sale. Only as accurate as
+buy-price hygiene. Revenue figures are inc-GST; Gross Profit is always
+ex-GST. Never mix the two bases.
+_Avoid_: margin (when you mean the dollar figure), profit (unqualified).
+
+**Sales cache**:
+The local per-profile SQLite snapshot of Orders + lines that `rex sales`
+reports read. It is a copy, not the source of truth; every report carries its
+sync watermark. Freshness is the caller's responsibility.
+_Avoid_: database (as if authoritative), sync (as a noun for the store).
