@@ -258,6 +258,17 @@ describe("rex sales (golden)", () => {
     }
   });
 
+  it("rejects negative and blank --max-stale with a usage error (exit 2)", async () => {
+    freshStateDir();
+    for (const bad of ["-1", " "]) {
+      await expect(
+        runCli(["sales", "report", "--fy", "2026", "--max-stale", bad], () => {
+          throw new Error("no API calls expected");
+        }),
+      ).rejects.toMatchObject({ code: "commander.invalidArgument", exitCode: 2 });
+    }
+  });
+
   it("rejects junk --by dimensions (exit 6)", async () => {
     freshStateDir();
     await runCli(["sales", "sync"], ordersHandler);

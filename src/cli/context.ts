@@ -142,24 +142,26 @@ export function run(deps: ContextDeps, handler: Handler) {
  * "2026.5", which parseInt would silently truncate) with a clean usage error —
  * a plain Error here would escape commander as a raw stack trace.
  */
+function invalidNumber(expected: string, value: string): never {
+  const err = new InvalidArgumentError(`expected ${expected}, got "${value}".`);
+  err.exitCode = EXIT.USAGE;
+  throw err;
+}
+
+/** Number("") and Number("  ") are 0 — blanks must not coerce silently. */
+function toNumber(value: string): number {
+  return value.trim() === "" ? Number.NaN : Number(value);
+}
+
 export function asInt(value: string): number {
-  // Number("") and Number("  ") are 0 — reject blanks before coercing.
-  const n = value.trim() === "" ? Number.NaN : Number(value);
-  if (!Number.isSafeInteger(n)) {
-    const err = new InvalidArgumentError(`expected an integer, got "${value}".`);
-    err.exitCode = EXIT.USAGE;
-    throw err;
-  }
+  const n = toNumber(value);
+  if (!Number.isSafeInteger(n)) invalidNumber("an integer", value);
   return n;
 }
 
 /** Commander option coercer for non-negative decimal flags (e.g. hours). */
 export function asNonNegativeNumber(value: string): number {
-  const n = value.trim() === "" ? Number.NaN : Number(value);
-  if (!Number.isFinite(n) || n < 0) {
-    const err = new InvalidArgumentError(`expected a non-negative number, got "${value}".`);
-    err.exitCode = EXIT.USAGE;
-    throw err;
-  }
+  const n = toNumber(value);
+  if (!Number.isFinite(n) || n < 0) invalidNumber("a non-negative number", value);
   return n;
 }

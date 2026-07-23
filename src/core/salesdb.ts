@@ -167,6 +167,15 @@ export function upsertOrder(db: Database, order: OrderRow, items: OrderItemRow[]
       details: { orderId: order.id, createdOn: order.createdOn },
     });
   }
+  for (const item of items) {
+    // A mismatched line would survive this order's delete-and-reinsert and
+    // silently corrupt another order's aggregates.
+    if (item.orderId !== order.id) {
+      throw new ValidationError(`item ${item.id} belongs to order ${item.orderId}, not ${order.id}`, {
+        details: { orderId: order.id, itemId: item.id, itemOrderId: item.orderId },
+      });
+    }
+  }
   const insertHeader = db.query(
     `INSERT OR REPLACE INTO orders (
        id, created_on, created_ts, day_local, month_local, modified_on,
@@ -326,7 +335,7 @@ export function runReport(db: Database, opts: ReportOptions): Record<string, unk
   }
   const selects = dims.flatMap((d) => d.select);
   const groups = dims.flatMap((d) => d.group);
-  const params: number[] = [opts.fromTs, opts.toTs];
+  let params: number[] = [opts.fromTs, opts.toTs];
 
   let sql: string;
   if (itemMode) {
@@ -366,7 +375,8 @@ export function runReport(db: Database, opts: ReportOptions): Record<string, unk
         GROUP BY i.order_id
       ) x ON x.order_id = o.id
       WHERE ${IS_SALE} AND o.created_ts >= ? AND o.created_ts < ?`;
-    params.unshift(opts.fromTs, opts.toTs);
+    // Subquery placeholders bind first, then the outer WHERE's pair.
+    params = [opts.fromTs, opts.toTs, opts.fromTs, opts.toTs];
   }
 
   const orderBy = SORTS[opts.sort ?? "revenue"];

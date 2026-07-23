@@ -112,7 +112,11 @@ export class WriteGatedError extends RexError {
   }
 }
 
-/** The local sales cache is older than the caller's --max-stale bound. */
+/**
+ * The local sales cache can't satisfy a freshness requirement: it is older
+ * than the caller's --max-stale bound, or no initial sync ever completed
+ * (no last_synced_at), in which case reports refuse to serve partial totals.
+ */
 export class StaleCacheError extends RexError {
   constructor(message: string, options?: RexErrorOptions) {
     super("stale_cache", message, EXIT.STALE_CACHE, options);
