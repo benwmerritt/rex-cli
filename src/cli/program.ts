@@ -18,7 +18,7 @@ export function buildProgram(deps: ContextDeps = {}): Command {
   program
     .name("rex")
     .description("Retail Express POS CLI for agentic workflows")
-    .version("0.1.0")
+    .version("0.2.0")
     .option("--json", "JSON output (default)")
     .option("-H, --human", "human-readable tables")
     .option("-p, --profile <name>", "profile to use")

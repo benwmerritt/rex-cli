@@ -1,6 +1,6 @@
 {
   "name": "@benmerritt/rex-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Retail Express POS CLI for agentic workflows — read and (carefully) write the Retail Express catalogue from the command line.",
   "type": "module",
   "bin": {
