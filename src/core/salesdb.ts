@@ -335,8 +335,10 @@ export function runReport(db: Database, opts: ReportOptions): Record<string, unk
     params.unshift(opts.fromTs, opts.toTs);
   }
 
+  const orderBy = SORTS[opts.sort ?? "revenue"];
+  if (!orderBy) throw new ValidationError(`unknown sort key "${opts.sort}"`);
   if (groups.length > 0) sql += ` GROUP BY ${groups.join(", ")}`;
-  sql += ` ORDER BY ${SORTS[opts.sort ?? "revenue"]}`;
+  sql += ` ORDER BY ${orderBy}`;
   if (opts.top !== undefined) {
     sql += " LIMIT ?";
     params.push(opts.top);

@@ -96,7 +96,7 @@ REST API cannot aggregate or date-filter orders), so `rex sales sync` once, then
 `stale_hours`; check `stale_hours` and re-sync before quoting numbers as current.
 
 ```bash
-rex sales report --fy 2026 --by salesperson --top 1   # top rep this AU FY
+rex sales report --fy 2026 --by salesperson --top 1   # top rep for FY2026 (omit --fy for the current FY)
 ```
 
 Sync/report commands, JSON envelope, staleness contract, and recipes:

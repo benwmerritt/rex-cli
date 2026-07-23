@@ -122,7 +122,8 @@ export interface SyncOptions {
  * every committed page so an interrupted run resumes from where it stopped
  * (a leftover cursor always forces full mode, --full or not); on completion
  * the cursor is cleared and `watermark` is set to the max `modified_on` across
- * the whole table, so pages committed by an interrupted predecessor count too.
+ * the whole table — capped at the instant the stream began, so edits landing
+ * on already-fetched pages mid-sync are re-covered by the next incremental.
  * Incremental mode filters by `modified_since` = watermark − 24h overlap.
  * `last_synced_at` is stamped on every successful run.
  */
@@ -145,6 +146,11 @@ export async function syncSales(
     if (cursor !== null) {
       resumedFromPage = Number(cursor) + 1;
       page = resumedFromPage;
+    } else {
+      // Orders edited while (or after a crash, days after) this stream began
+      // may sit on already-fetched pages; the final watermark is capped at
+      // this instant so the next incremental re-covers everything since.
+      setMeta(db, "full_sync_started_at", now().toISOString());
     }
   } else {
     query.modified_since = new Date(Date.parse(priorWatermark!) - WATERMARK_OVERLAP_MS).toISOString();
@@ -207,6 +213,14 @@ export async function syncSales(
         maxModifiedTs = Date.parse(dbMax);
         maxModified = dbMax;
       }
+      // Cap at the stream's start (see above). Missing stamp = a resume of a
+      // pre-stamp interrupted sync; this run's start is the best cap we have.
+      const startedAt = getMeta(db, "full_sync_started_at") ?? new Date(started).toISOString();
+      if (maxModified === null || maxModifiedTs > Date.parse(startedAt)) {
+        maxModified = startedAt;
+        maxModifiedTs = Date.parse(startedAt);
+      }
+      db.query("DELETE FROM meta WHERE key = 'full_sync_started_at'").run();
     }
     if (maxModified !== null) setMeta(db, "watermark", maxModified);
     setMeta(db, "last_synced_at", now().toISOString());

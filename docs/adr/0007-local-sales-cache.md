@@ -5,8 +5,9 @@ orders, not from live API calls per question. The REST API has no server-side
 aggregation and — probed live — no date filtering either: `created_on_min`,
 `min_created_on`, `created_on_from`, `date_from`, `start_date`, and
 `created_after` are all silently ignored. With 167k orders at 250/page against a
-shared 250 req/min budget, every question would re-scan the whole account:
-a full-FY report is ~a minute of paging that we'd re-pay on every follow-up.
+shared 250 req/min budget, a whole-account scan is ~670 requests (~3 min of the
+budget); even a single-FY report — orders sort ascending by `created_on`, so the
+start can be binary-searched — is ~a minute of paging re-paid on every follow-up.
 
 `modified_since` **does** work on `/orders` (verified live) and also catches
 later edits to already-synced orders, so a watermarked incremental sync is
