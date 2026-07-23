@@ -196,6 +196,20 @@ describe("salesdb", () => {
     expect(row).toEqual({ revenue: 935, units: 9, gross_profit_ex: 450, orders: 7 });
   });
 
+  it("excludes non-Sale/Return line types (freight, fees) from item and header measures", () => {
+    // Freight line on O7: must not move product revenue/units/profit, nor
+    // header units/profit; header revenue comes from order_total regardless.
+    upsertOrder(db, order({ id: 7, createdOn: "2025-07-15T02:00:00.000Z", orderTotal: 165, ...BOB, ...CITY }), [
+      item({ id: 71, orderId: 7, lineTotal: 165, cogsEx: 60, ...P102 }),
+      item({ id: 72, orderId: 7, lineTotal: 20, itemType: "Freight" }),
+    ]);
+    const products = runReport(db, { fromTs: FROM, toTs: TO, by: ["product"] });
+    expect(products.find((r) => r.product_id === null)).toBeUndefined();
+    expect(products.find((r) => r.product_id === 102)).toMatchObject({ revenue: 385, units: 3, gross_profit_ex: 170 });
+    const [total] = runReport(db, { fromTs: FROM, toTs: TO, by: [] });
+    expect(total).toEqual({ revenue: 935, units: 9, gross_profit_ex: 450, orders: 7 });
+  });
+
   it("rejects unknown dimensions, unknown sort keys, and non-positive top", () => {
     expect(() => runReport(db, { fromTs: FROM, toTs: TO, by: ["bogus" as never] })).toThrow();
     expect(() => runReport(db, { fromTs: FROM, toTs: TO, by: [], sort: "bogus" as never })).toThrow();

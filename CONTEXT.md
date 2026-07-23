@@ -70,9 +70,11 @@ The Retail Express user credited with an Order (`sales_person`). The unit of
 _Avoid_: salesman, staff member, rep.
 
 **Gross Profit**:
-Per line: ex-GST revenue (`order_item_total / (1 + tax_rate)`) minus COGS
-(per-unit `cogs_ex` × quantity) as recorded at time of sale. Only as accurate as buy-price hygiene. Revenue
-figures are inc-GST; Gross Profit is always ex-GST. Never mix the two bases.
+Per line: ex-GST revenue (`order_item_total / (1 + tax_rate)`, where
+`tax_rate` is a decimal fraction — `0.1` = 10% GST) minus COGS (per-unit
+`cogs_ex` × quantity) as recorded at time of sale. Only as accurate as
+buy-price hygiene. Revenue figures are inc-GST; Gross Profit is always
+ex-GST. Never mix the two bases.
 _Avoid_: margin (when you mean the dollar figure), profit (unqualified).
 
 **Sales cache**:

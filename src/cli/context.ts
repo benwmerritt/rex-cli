@@ -143,7 +143,8 @@ export function run(deps: ContextDeps, handler: Handler) {
  * a plain Error here would escape commander as a raw stack trace.
  */
 export function asInt(value: string): number {
-  const n = Number(value);
+  // Number("") and Number("  ") are 0 — reject blanks before coercing.
+  const n = value.trim() === "" ? Number.NaN : Number(value);
   if (!Number.isSafeInteger(n)) {
     const err = new InvalidArgumentError(`expected an integer, got "${value}".`);
     err.exitCode = EXIT.USAGE;
@@ -154,7 +155,7 @@ export function asInt(value: string): number {
 
 /** Commander option coercer for non-negative decimal flags (e.g. hours). */
 export function asNonNegativeNumber(value: string): number {
-  const n = Number(value);
+  const n = value.trim() === "" ? Number.NaN : Number(value);
   if (!Number.isFinite(n) || n < 0) {
     const err = new InvalidArgumentError(`expected a non-negative number, got "${value}".`);
     err.exitCode = EXIT.USAGE;

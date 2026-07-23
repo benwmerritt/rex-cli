@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { ValidationError } from "./errors";
@@ -83,26 +83,33 @@ CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items (product_id
  * `schema_version` so future migrations have something to branch on.
  */
 export function openSalesDb(path: string): Database {
-  if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
-  const db = new (loadSqlite().Database)(path, { create: true });
   // Customer/sales data: owner-only, like config.toml and the token cache.
-  // SQLite gives -wal/-shm the main file's mode, but chmod any survivors from
-  // an earlier open too. Ordering matters: main-file chmod before WAL pragma.
+  // The file is created 0o600 BEFORE SQLite opens it (no umask-default
+  // window); chmod covers pre-existing files and any -wal/-shm survivors of
+  // an earlier open. New sidecars inherit the main file's mode.
   if (path !== ":memory:") {
+    mkdirSync(dirname(path), { recursive: true });
+    closeSync(openSync(path, "a", 0o600));
     chmodSync(path, 0o600);
     for (const sidecar of [`${path}-wal`, `${path}-shm`]) {
       try {
         chmodSync(sidecar, 0o600);
-      } catch {
-        // Sidecar doesn't exist yet — created 0o600 via the main file's mode.
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       }
     }
   }
-  db.exec("PRAGMA journal_mode = WAL;");
-  // A concurrent sync/report pair should wait briefly, not die on SQLITE_BUSY.
-  db.exec("PRAGMA busy_timeout = 5000;");
-  db.exec(SCHEMA);
-  setMeta(db, "schema_version", "1");
+  const db = new (loadSqlite().Database)(path, { create: true });
+  try {
+    db.exec("PRAGMA journal_mode = WAL;");
+    // A concurrent sync/report pair should wait briefly, not die on SQLITE_BUSY.
+    db.exec("PRAGMA busy_timeout = 5000;");
+    db.exec(SCHEMA);
+    setMeta(db, "schema_version", "1");
+  } catch (err) {
+    db.close();
+    throw err;
+  }
   return db;
 }
 
@@ -283,9 +290,14 @@ function profitExpr(t: string): string {
   return `(${t}.line_total / (1.0 + ${t}.tax_rate) - ${t}.cogs_ex * ${t}.quantity)`;
 }
 
-/** Units count only sale/return lines as-is (return quantity is negative, so it nets off). */
-function unitsExpr(t: string): string {
-  return `CASE WHEN ${t}.item_type IS NULL OR ${t}.item_type IN ('Sale', 'Return') THEN ${t}.quantity ELSE 0 END`;
+/**
+ * Only sale/return lines carry product revenue, units, and profit; other line
+ * types (freight, fees) are excluded from item-level aggregation entirely,
+ * matching the documented "line totals exclude freight" semantics. Returns
+ * carry negative quantity/total, so they net off.
+ */
+function saleLine(t: string): string {
+  return `(${t}.item_type IS NULL OR ${t}.item_type IN ('Sale', 'Return'))`;
 }
 
 /** Round money at the output edge only; aggregation runs on raw values. */
@@ -318,14 +330,14 @@ export function runReport(db: Database, opts: ReportOptions): Record<string, unk
 
   let sql: string;
   if (itemMode) {
-    let where = `${IS_SALE} AND o.created_ts >= ? AND o.created_ts < ?`;
+    let where = `${IS_SALE} AND ${saleLine("i")} AND o.created_ts >= ? AND o.created_ts < ?`;
     if (opts.productId !== undefined) {
       where += " AND i.product_id = ?";
       params.push(opts.productId);
     }
     const measures = [
       "SUM(i.line_total) AS revenue",
-      `SUM(${unitsExpr("i")}) AS units`,
+      "SUM(i.quantity) AS units",
       `SUM(${profitExpr("i")}) AS gross_profit_ex`,
       "COUNT(DISTINCT i.order_id) AS orders",
     ];
@@ -346,11 +358,11 @@ export function runReport(db: Database, opts: ReportOptions): Record<string, unk
       FROM orders o
       LEFT JOIN (
         SELECT i.order_id AS order_id,
-               SUM(${unitsExpr("i")}) AS units,
+               SUM(i.quantity) AS units,
                SUM(${profitExpr("i")}) AS gross_profit_ex
         FROM order_items i
         JOIN orders oi ON oi.id = i.order_id
-        WHERE ${isSale("oi")} AND oi.created_ts >= ? AND oi.created_ts < ?
+        WHERE ${isSale("oi")} AND ${saleLine("i")} AND oi.created_ts >= ? AND oi.created_ts < ?
         GROUP BY i.order_id
       ) x ON x.order_id = o.id
       WHERE ${IS_SALE} AND o.created_ts >= ? AND o.created_ts < ?`;
