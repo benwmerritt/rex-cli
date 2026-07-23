@@ -144,6 +144,11 @@ export async function syncSales(
   let resumedFromPage: number | undefined;
   if (fullSync) {
     if (cursor !== null) {
+      // Resuming by page number is sound: orders list ascending by created_on
+      // and are never hard-deleted, so the already-synced prefix is
+      // append-stable. Any row that could shift across the boundary has, by
+      // construction, modified_on >= full_sync_started_at — the watermark cap
+      // below hands it to the next incremental sync.
       resumedFromPage = Number(cursor) + 1;
       page = resumedFromPage;
     } else {

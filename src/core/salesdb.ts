@@ -86,7 +86,18 @@ export function openSalesDb(path: string): Database {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new (loadSqlite().Database)(path, { create: true });
   // Customer/sales data: owner-only, like config.toml and the token cache.
-  if (path !== ":memory:") chmodSync(path, 0o600);
+  // SQLite gives -wal/-shm the main file's mode, but chmod any survivors from
+  // an earlier open too. Ordering matters: main-file chmod before WAL pragma.
+  if (path !== ":memory:") {
+    chmodSync(path, 0o600);
+    for (const sidecar of [`${path}-wal`, `${path}-shm`]) {
+      try {
+        chmodSync(sidecar, 0o600);
+      } catch {
+        // Sidecar doesn't exist yet — created 0o600 via the main file's mode.
+      }
+    }
+  }
   db.exec("PRAGMA journal_mode = WAL;");
   // A concurrent sync/report pair should wait briefly, not die on SQLITE_BUSY.
   db.exec("PRAGMA busy_timeout = 5000;");

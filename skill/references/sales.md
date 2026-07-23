@@ -17,8 +17,8 @@ rex sales sync --full          # re-stream and re-upsert every order
 ```
 
 `--full` repairs rows in place but never deletes; for a true from-scratch
-rebuild, delete the cache file (`~/.local/state/rex/sales.<profile>.db`) and
-sync again.
+rebuild, delete the cache file (`~/.local/state/rex/sales.<profile>.db`, plus
+its `-wal`/`-shm` sidecars if present) and sync again.
 
 ## Report commands
 

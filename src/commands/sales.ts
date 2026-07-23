@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import type { Command } from "commander";
-import { asInt, type ContextDeps, run } from "../cli/context";
+import { asInt, asNonNegativeNumber, type ContextDeps, run } from "../cli/context";
 import { StaleCacheError, ValidationError } from "../core/errors";
 import { toHuman } from "../core/output";
 import { resolvePeriod } from "../core/period";
@@ -77,7 +77,11 @@ export function registerSales(program: Command, deps: ContextDeps): void {
     .option("--sort <key>", "revenue | units | profit (default revenue, desc)")
     .option("--top <n>", "limit to the top n rows", asInt)
     .option("--product <id>", "restrict to one product's lines", asInt)
-    .option("--max-stale <hours>", "fail with exit 9 if the cache is older than this")
+    .option(
+      "--max-stale <hours>",
+      "fail with exit 9 if the cache is older than this",
+      asNonNegativeNumber,
+    )
     .action(
       run(deps, (ctx, opts) => {
         const period = resolvePeriod({
@@ -89,15 +93,7 @@ export function registerSales(program: Command, deps: ContextDeps): void {
         const by = parseBy(opts.by as string | undefined);
         const sort = parseSort(opts.sort as string | undefined);
 
-        let maxStaleHours: number | undefined;
-        if (opts.maxStale !== undefined) {
-          maxStaleHours = Number(opts.maxStale);
-          if (!Number.isFinite(maxStaleHours) || maxStaleHours < 0) {
-            throw new ValidationError(
-              `--max-stale must be a non-negative number of hours, got "${opts.maxStale}".`,
-            );
-          }
-        }
+        const maxStaleHours = opts.maxStale as number | undefined;
 
         const dbPath = salesDbFile(ctx.profile().name);
         if (!existsSync(dbPath)) {

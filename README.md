@@ -109,6 +109,9 @@ rex sales report --product 124001                 # one product's history
   gross profit riding along.
 - **Gross profit** is ex-GST (line revenue minus recorded COGS from the cache);
   it is never mixed with the inc-GST revenue figure.
+- Product-grouped reports (and `--product`) sum line totals, which exclude
+  freight; other groupings sum header `order_total`, which includes it — the
+  two bases are close but not reconcilable against each other.
 - Buckets and `--fy`/`--from`/`--to` use the store-local calendar
   (Australia/Adelaide). `--fy 2026` = 2025-07-01 through 2026-07-01 (exclusive).
 

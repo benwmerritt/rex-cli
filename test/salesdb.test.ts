@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -129,6 +129,10 @@ describe("salesdb", () => {
     seed(db);
   });
 
+  afterEach(() => {
+    db.close();
+  });
+
   it("salesDbFile joins profile into stateDir and rejects unsafe names", () => {
     expect(salesDbFile("default").endsWith("sales.default.db")).toBe(true);
     expect(() => salesDbFile("../evil")).toThrow();
@@ -140,6 +144,7 @@ describe("salesdb", () => {
     try {
       openSalesDb(path).close();
       expect(existsSync(path)).toBe(true);
+      expect(statSync(path).mode & 0o777).toBe(0o600); // customer data: owner-only
       const reopened = openSalesDb(path); // schema re-apply must not throw
       expect(getMeta(reopened, "schema_version")).toBe("1");
       reopened.close();

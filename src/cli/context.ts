@@ -151,3 +151,14 @@ export function asInt(value: string): number {
   }
   return n;
 }
+
+/** Commander option coercer for non-negative decimal flags (e.g. hours). */
+export function asNonNegativeNumber(value: string): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    const err = new InvalidArgumentError(`expected a non-negative number, got "${value}".`);
+    err.exitCode = EXIT.USAGE;
+    throw err;
+  }
+  return n;
+}
