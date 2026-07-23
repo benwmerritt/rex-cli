@@ -209,6 +209,15 @@ describe("salesdb", () => {
     expect(people.find((r) => r.salesperson_id === 1)).toMatchObject({ salesperson_name: "Alicia", revenue: 440 });
     const products = runReport(db, { fromTs: FROM, toTs: TO, by: ["product"] });
     expect(products.filter((r) => r.product_id === 100)).toHaveLength(1);
+    // Outlet rename: same id, new name — still one row.
+    upsertOrder(
+      db,
+      order({ id: 13, createdOn: "2025-07-26T02:00:00.000Z", orderTotal: 11, ...BOB, outletId: 10, outletName: "City Central" }),
+      [item({ id: 131, orderId: 13, lineTotal: 11, ...P100 })],
+    );
+    const outlets = runReport(db, { fromTs: FROM, toTs: TO, by: ["outlet"] });
+    expect(outlets.filter((r) => r.outlet_id === 10)).toHaveLength(1);
+    expect(outlets.find((r) => r.outlet_id === 10)).toMatchObject({ outlet_name: "City Central" });
   });
 
   it("excludes non-Sale/Return line types (freight, fees) from item and header measures", () => {

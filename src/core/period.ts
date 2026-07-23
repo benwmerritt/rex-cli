@@ -100,6 +100,9 @@ function parseLocalDate(value: string, flag: string): { year: number; month: num
   const year = Number(m[1]);
   const month = Number(m[2]);
   const day = Number(m[3]);
+  // Date.UTC maps years 0-99 to 1900-1999, so "0050-01-01" would silently
+  // become 1950 — refuse the whole two-digit-year hazard zone.
+  if (year < 100) throw new ValidationError(`--${flag} year is out of range: "${value}"`);
   if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
     throw new ValidationError(`--${flag} is not a real date: "${value}"`);
   }

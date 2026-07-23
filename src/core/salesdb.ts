@@ -261,14 +261,14 @@ const DIMENSIONS: Record<Dimension, { select: string[]; group: string[] }> = {
     group: ["o.salesperson_id"],
   },
   outlet: {
-    select: ["o.outlet_id AS outlet_id", "MAX(o.outlet_name) AS outlet_name"],
+    select: ["o.outlet_id AS outlet_id", "COALESCE(MAX(o.outlet_name), 'Unknown') AS outlet_name"],
     group: ["o.outlet_id"],
   },
   product: {
     select: [
       "i.product_id AS product_id",
-      "MAX(i.product_name) AS product_name",
-      "MAX(i.product_type_name) AS product_type_name",
+      "COALESCE(MAX(i.product_name), 'Unknown') AS product_name",
+      "COALESCE(MAX(i.product_type_name), 'Unknown') AS product_type_name",
     ],
     group: ["i.product_id"],
   },
