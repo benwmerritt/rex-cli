@@ -249,25 +249,28 @@ export interface ReportOptions {
  * `o` is the orders header, `i` an order_items line (product only appears in
  * item mode, so `i` is always in scope for it).
  */
+// Group by stable IDs only: denormalised names are display fields (via MAX so
+// they aggregate), else a renamed salesperson/product would split into one row
+// per historical name, since old order rows keep the name they were synced with.
 const DIMENSIONS: Record<Dimension, { select: string[]; group: string[] }> = {
   salesperson: {
     select: [
       "o.salesperson_id AS salesperson_id",
-      "COALESCE(o.salesperson_name, 'Unknown') AS salesperson_name",
+      "COALESCE(MAX(o.salesperson_name), 'Unknown') AS salesperson_name",
     ],
-    group: ["o.salesperson_id", "o.salesperson_name"],
+    group: ["o.salesperson_id"],
   },
   outlet: {
-    select: ["o.outlet_id AS outlet_id", "o.outlet_name AS outlet_name"],
-    group: ["o.outlet_id", "o.outlet_name"],
+    select: ["o.outlet_id AS outlet_id", "MAX(o.outlet_name) AS outlet_name"],
+    group: ["o.outlet_id"],
   },
   product: {
     select: [
       "i.product_id AS product_id",
-      "i.product_name AS product_name",
-      "i.product_type_name AS product_type_name",
+      "MAX(i.product_name) AS product_name",
+      "MAX(i.product_type_name) AS product_type_name",
     ],
-    group: ["i.product_id", "i.product_name", "i.product_type_name"],
+    group: ["i.product_id"],
   },
   month: { select: ["o.month_local AS month"], group: ["o.month_local"] },
   day: { select: ["o.day_local AS day"], group: ["o.day_local"] },

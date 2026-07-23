@@ -196,6 +196,21 @@ describe("salesdb", () => {
     expect(row).toEqual({ revenue: 935, units: 9, gross_profit_ex: 450, orders: 7 });
   });
 
+  it("groups by stable IDs — a renamed salesperson/product stays one row", () => {
+    // Old rows keep the denormalised name they were synced with; a rename
+    // must not split the aggregate.
+    upsertOrder(
+      db,
+      order({ id: 12, createdOn: "2025-07-25T02:00:00.000Z", orderTotal: 55, salespersonId: 1, salespersonName: "Alicia", ...CITY }),
+      [item({ id: 121, orderId: 12, lineTotal: 55, cogsEx: 20, ...P100, productName: "Widget MkII" })],
+    );
+    const people = runReport(db, { fromTs: FROM, toTs: TO, by: ["salesperson"] });
+    expect(people).toHaveLength(2);
+    expect(people.find((r) => r.salesperson_id === 1)).toMatchObject({ salesperson_name: "Alicia", revenue: 440 });
+    const products = runReport(db, { fromTs: FROM, toTs: TO, by: ["product"] });
+    expect(products.filter((r) => r.product_id === 100)).toHaveLength(1);
+  });
+
   it("excludes non-Sale/Return line types (freight, fees) from item and header measures", () => {
     // Freight line on O7: must not move product revenue/units/profit, nor
     // header units/profit; header revenue comes from order_total regardless.

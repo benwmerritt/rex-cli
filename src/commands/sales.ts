@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import type { Command } from "commander";
-import { asInt, asNonNegativeNumber, type ContextDeps, run } from "../cli/context";
+import { asInt, asNonNegativeNumber, asPositiveInt, type ContextDeps, run } from "../cli/context";
 import { StaleCacheError, ValidationError } from "../core/errors";
 import { toHuman } from "../core/output";
 import { resolvePeriod } from "../core/period";
@@ -75,7 +75,7 @@ export function registerSales(program: Command, deps: ContextDeps): void {
     .option("--last <window>", "trailing window: <n>d | <n>w | <n>m")
     .option("--by <dims>", "comma-separated: salesperson,outlet,product,month,day")
     .option("--sort <key>", "revenue | units | profit (default revenue, desc)")
-    .option("--top <n>", "limit to the top n rows", asInt)
+    .option("--top <n>", "limit to the top n rows", asPositiveInt)
     .option("--product <id>", "restrict to one product's lines", asInt)
     .option(
       "--max-stale <hours>",
@@ -113,7 +113,15 @@ export function registerSales(program: Command, deps: ContextDeps): void {
               { details: { path: dbPath, resume_page: getMeta(db, "full_sync_page") } },
             );
           }
-          const ageMs = Math.max(0, Date.now() - Date.parse(syncedAt));
+          const syncedTs = Date.parse(syncedAt);
+          if (!Number.isFinite(syncedTs)) {
+            // Corrupt metadata must not slip past --max-stale as NaN.
+            throw new StaleCacheError(
+              "Sales cache metadata is corrupt (unparseable last_synced_at). Run `rex sales sync`.",
+              { details: { path: dbPath, last_synced_at: syncedAt } },
+            );
+          }
+          const ageMs = Math.max(0, Date.now() - syncedTs);
           // Rounded to 0.1h for display; the --max-stale gate uses the exact age.
           const staleHours = Math.round(ageMs / 360_000) / 10;
 

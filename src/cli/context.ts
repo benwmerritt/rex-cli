@@ -159,6 +159,13 @@ export function asInt(value: string): number {
   return n;
 }
 
+/** Commander option coercer for strictly positive integer flags. */
+export function asPositiveInt(value: string): number {
+  const n = toNumber(value);
+  if (!Number.isSafeInteger(n) || n <= 0) invalidNumber("a positive integer", value);
+  return n;
+}
+
 /** Commander option coercer for non-negative decimal flags (e.g. hours). */
 export function asNonNegativeNumber(value: string): number {
   const n = toNumber(value);
