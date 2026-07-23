@@ -192,21 +192,25 @@ export async function syncSales(
     page += 1;
   }
 
-  if (fullSync) {
-    db.query("DELETE FROM meta WHERE key = 'full_sync_page'").run();
-    // A resumed run never saw the pages committed before the crash (and a run
-    // that resumes past the final page sees none at all), so floor the
-    // watermark at the table-wide max rather than trusting this run's pages.
-    const dbMax = (
-      db.query("SELECT MAX(modified_on) AS m FROM orders").get() as { m: string | null }
-    ).m;
-    if (dbMax !== null && Date.parse(dbMax) > maxModifiedTs) {
-      maxModifiedTs = Date.parse(dbMax);
-      maxModified = dbMax;
+  // One transaction: a crash must not leave the cursor cleared without the
+  // watermark advanced (which would silently downgrade the next sync).
+  db.transaction(() => {
+    if (fullSync) {
+      db.query("DELETE FROM meta WHERE key = 'full_sync_page'").run();
+      // A resumed run never saw the pages committed before the crash (and a run
+      // that resumes past the final page sees none at all), so floor the
+      // watermark at the table-wide max rather than trusting this run's pages.
+      const dbMax = (
+        db.query("SELECT MAX(modified_on) AS m FROM orders").get() as { m: string | null }
+      ).m;
+      if (dbMax !== null && Date.parse(dbMax) > maxModifiedTs) {
+        maxModifiedTs = Date.parse(dbMax);
+        maxModified = dbMax;
+      }
     }
-  }
-  if (maxModified !== null) setMeta(db, "watermark", maxModified);
-  setMeta(db, "last_synced_at", now().toISOString());
+    if (maxModified !== null) setMeta(db, "watermark", maxModified);
+    setMeta(db, "last_synced_at", now().toISOString());
+  })();
 
   return {
     fullSync,

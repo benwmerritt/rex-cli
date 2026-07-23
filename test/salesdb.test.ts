@@ -135,7 +135,8 @@ describe("salesdb", () => {
   });
 
   it("openSalesDb creates parent dirs, stamps schema_version, and reopens idempotently", () => {
-    const path = join(tmpdir(), `rex-salesdb-test-${Date.now()}`, "nested", "sales.db");
+    const tmpRoot = join(tmpdir(), `rex-salesdb-test-${Date.now()}`);
+    const path = join(tmpRoot, "nested", "sales.db");
     try {
       openSalesDb(path).close();
       expect(existsSync(path)).toBe(true);
@@ -143,7 +144,7 @@ describe("salesdb", () => {
       expect(getMeta(reopened, "schema_version")).toBe("1");
       reopened.close();
     } finally {
-      rmSync(join(tmpdir(), path.split("/").slice(-3)[0]!), { recursive: true, force: true });
+      rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
 

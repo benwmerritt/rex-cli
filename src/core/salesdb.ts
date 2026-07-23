@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { ValidationError } from "./errors";
 import { stateDir } from "./paths";
 import { validateSafeProfileName } from "./validation";
 
@@ -84,6 +85,8 @@ CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items (product_id
 export function openSalesDb(path: string): Database {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new (loadSqlite().Database)(path, { create: true });
+  // Customer/sales data: owner-only, like config.toml and the token cache.
+  if (path !== ":memory:") chmodSync(path, 0o600);
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec(SCHEMA);
   setMeta(db, "schema_version", "1");
@@ -244,7 +247,10 @@ const SORTS: Record<SortKey, string> = {
  * ~5-8% of raw non-Cancelled totals). Awaiting Payment DOES count — a written
  * order on the accrual (created_on) basis. NULL status counts as a sale.
  */
-const IS_SALE = "COALESCE(o.status_name, '') NOT IN ('Cancelled', 'Quote', 'Incomplete')";
+function isSale(t: string): string {
+  return `COALESCE(${t}.status_name, '') NOT IN ('Cancelled', 'Quote', 'Incomplete')`;
+}
+const IS_SALE = isSale("o");
 
 /**
  * Per-line gross profit: ex-GST revenue minus COGS. ASSUMPTION: `cogs_ex` is
@@ -275,7 +281,15 @@ function money(value: unknown): number {
  */
 export function runReport(db: Database, opts: ReportOptions): Record<string, unknown>[] {
   const itemMode = opts.by.includes("product") || opts.productId !== undefined;
-  const dims = opts.by.map((d) => DIMENSIONS[d]);
+  const dims = opts.by.map((d) => {
+    const dim = DIMENSIONS[d];
+    if (!dim) throw new ValidationError(`unknown report dimension "${d}"`);
+    return dim;
+  });
+  if (opts.top !== undefined && (!Number.isInteger(opts.top) || opts.top <= 0)) {
+    // SQLite treats LIMIT <= 0 as unbounded — reject rather than surprise.
+    throw new ValidationError(`top must be a positive integer, got ${opts.top}`);
+  }
   const selects = dims.flatMap((d) => d.select);
   const groups = dims.flatMap((d) => d.group);
   const params: number[] = [opts.fromTs, opts.toTs];
@@ -304,6 +318,8 @@ export function runReport(db: Database, opts: ReportOptions): Record<string, unk
       "SUM(COALESCE(x.gross_profit_ex, 0)) AS gross_profit_ex",
       "COUNT(*) AS orders",
     ];
+    // The subquery repeats the sale/range filter so it aggregates only the
+    // period's lines, not the whole mirror. Its placeholders bind first.
     sql = `SELECT ${[...selects, ...measures].join(", ")}
       FROM orders o
       LEFT JOIN (
@@ -311,9 +327,12 @@ export function runReport(db: Database, opts: ReportOptions): Record<string, unk
                SUM(${unitsExpr("i")}) AS units,
                SUM(${profitExpr("i")}) AS gross_profit_ex
         FROM order_items i
+        JOIN orders oi ON oi.id = i.order_id
+        WHERE ${isSale("oi")} AND oi.created_ts >= ? AND oi.created_ts < ?
         GROUP BY i.order_id
       ) x ON x.order_id = o.id
       WHERE ${IS_SALE} AND o.created_ts >= ? AND o.created_ts < ?`;
+    params.unshift(opts.fromTs, opts.toTs);
   }
 
   if (groups.length > 0) sql += ` GROUP BY ${groups.join(", ")}`;

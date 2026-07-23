@@ -153,17 +153,21 @@ function lastPeriod(spec: string, now: Date): Period {
   const m = /^([1-9]\d*)([dwm])$/.exec(spec);
   if (!m) throw new ValidationError(`--last must be <n>d, <n>w, or <n>m, got "${spec}"`);
   const n = Number(m[1]);
+  // Beyond this the wall-clock math leaves Date/Intl's representable range
+  // and produces NaN instants; nothing real is that far back anyway.
+  if (n > 12_000) throw new ValidationError(`--last window too large: "${spec}"`);
   const toTs = now.getTime();
   let fromTs: number;
   if (m[2] === "m") {
     // Calendar-aware: same Adelaide wall-clock time n months back, day clamped
-    // to the target month's length (Mar 31 - 1m => Feb 28/29).
+    // to the target month's length (Mar 31 - 1m => Feb 28/29). Wall fields
+    // carry whole seconds only, so restore the millisecond remainder.
     const w = toWall(toTs);
     const total = w.year * 12 + (w.month - 1) - n;
     const year = Math.floor(total / 12);
     const month = (total % 12) + 1;
     const day = Math.min(w.day, daysInMonth(year, month));
-    fromTs = fromWall(year, month, day, w.hour, w.minute, w.second);
+    fromTs = fromWall(year, month, day, w.hour, w.minute, w.second) + (toTs % 1000);
   } else {
     fromTs = toTs - (m[2] === "w" ? n * 7 : n) * 86_400_000;
   }

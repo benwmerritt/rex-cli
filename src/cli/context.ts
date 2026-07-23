@@ -144,7 +144,7 @@ export function run(deps: ContextDeps, handler: Handler) {
  */
 export function asInt(value: string): number {
   const n = Number(value);
-  if (!Number.isInteger(n)) {
+  if (!Number.isSafeInteger(n)) {
     const err = new InvalidArgumentError(`expected an integer, got "${value}".`);
     err.exitCode = EXIT.USAGE;
     throw err;
