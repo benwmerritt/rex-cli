@@ -57,7 +57,7 @@ Commands follow `rex <resource> <action>`. Resources: `product` (p), `inventory`
 
 - JSON to stdout. Lists are `{ "nodes": [...], "pageInfo": { page, pageSize, total } }`; single records are the object.
 - `--human` prints tables instead.
-- Errors go to stderr as JSON with a stable exit code: `2` usage, `3` auth, `4` rate-limit, `5` not-found, `6` validation, `7` api, `8` write-blocked.
+- Errors go to stderr as JSON with a stable exit code: `2` usage, `3` auth, `4` rate-limit, `5` not-found, `6` validation, `7` api, `8` write-blocked, `9` stale-cache.
 - `list` returns one page; use `--page`/`--page-size`, or `--all` to stream every page as NDJSON.
 
 ## Writing
@@ -74,6 +74,48 @@ rex product disable 124001                              # soft-disable (not a ha
 - `update` re-fetches the record and sends only the fields that changed.
 - Price fields require `--allow-price`.
 - Every write is appended to `~/.local/state/rex/audit.jsonl`.
+
+## Sales stats
+
+Sales reports run against a local per-profile SQLite cache, not live API calls —
+the REST API can neither aggregate nor filter orders by date. Sync once, then
+query offline (see [ADR 0007](docs/adr/0007-local-sales-cache.md)).
+
+```bash
+rex sales sync                 # first run ~20 min (167k orders); resumable
+rex sales sync                 # incremental after; catches edits via modified_since
+rex sales sync --full          # re-stream and re-upsert every order
+```
+
+`sync` pages `modified_since` forward from the last watermark, so a run that dies
+resumes where it stopped and later runs are seconds, not minutes. `--full`
+repairs rows in place but never deletes; for a true from-scratch rebuild, delete
+the cache file (`~/.local/state/rex/sales.<profile>.db`) and sync again.
+
+```bash
+rex sales report --fy 2026 --by salesperson       # AU financial year (default: current)
+rex sales report --from 2026-01-01 --to 2026-03-31
+rex sales report --last 90d --by outlet           # 90d / 12w / 6m windows
+rex sales report --by product --top 20            # busiest 20 products
+rex sales report --by month --sort profit         # month buckets, gross-profit desc
+rex sales report --product 124001                 # one product's history
+```
+
+- A **Sale** is a committed order — status not Cancelled, Quote, or Incomplete
+  (Awaiting Payment counts) — valued at inc-GST `order_total` (freight
+  included), dated by `created_on`; returns net off as negatives.
+- **Revenue** is the headline stat — default sort, first column — with units and
+  gross profit riding along.
+- **Gross profit** is ex-GST (line revenue minus recorded COGS from the cache);
+  it is never mixed with the inc-GST revenue figure.
+- Buckets and `--fy`/`--from`/`--to` use the store-local calendar
+  (Australia/Adelaide). `--fy 2026` = 2025-07-01 through 2026-07-01 (exclusive).
+
+Every result carries `synced_at` and `stale_hours`. `--max-stale <hours>` exits
+`9` (stale-cache) instead of reporting stale numbers as current — run
+`rex sales sync` first. Reports also exit `9` while the first sync has never
+completed, rather than serve partial totals. The cache lives in
+`~/.local/state/rex/`.
 
 ## Stocktake
 

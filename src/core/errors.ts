@@ -1,7 +1,7 @@
 /**
  * Stable exit codes. Agents branch on these, so they must not drift.
  *   0 ok · 1 generic · 2 usage · 3 auth · 4 ratelimit
- *   5 notfound · 6 validation · 7 api · 8 write-gated
+ *   5 notfound · 6 validation · 7 api · 8 write-gated · 9 stale-cache
  */
 export const EXIT = {
   OK: 0,
@@ -13,6 +13,7 @@ export const EXIT = {
   VALIDATION: 6,
   API: 7,
   WRITE_GATED: 8,
+  STALE_CACHE: 9,
 } as const;
 
 export type ErrorCode =
@@ -23,7 +24,8 @@ export type ErrorCode =
   | "notfound"
   | "validation"
   | "api"
-  | "write_gated";
+  | "write_gated"
+  | "stale_cache";
 
 export interface RexErrorOptions {
   /** Structured detail surfaced under `error.details` in JSON output. */
@@ -107,6 +109,13 @@ export class ApiError extends RexError {
 export class WriteGatedError extends RexError {
   constructor(message: string, options?: RexErrorOptions) {
     super("write_gated", message, EXIT.WRITE_GATED, options);
+  }
+}
+
+/** The local sales cache is older than the caller's --max-stale bound. */
+export class StaleCacheError extends RexError {
+  constructor(message: string, options?: RexErrorOptions) {
+    super("stale_cache", message, EXIT.STALE_CACHE, options);
   }
 }
 

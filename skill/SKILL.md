@@ -15,7 +15,7 @@ Retail Express WMS SOAP API because REST does not expose stocktake creation. If
 ## Output contract (read first)
 
 - **stdout is JSON.** Lists → `{ "nodes": [...], "pageInfo": {page,pageSize,total} }`; single records → the object; writes → `{ action, id, changed, dryRun }`.
-- **Errors → stderr** as `{ "error": {code,message,details} }` with a stable **exit code**: `0` ok · `2` usage · `3` auth · `4` ratelimit · `5` notfound · `6` validation · `7` api · `8` write-gated. Branch on it.
+- **Errors → stderr** as `{ "error": {code,message,details} }` with a stable **exit code**: `0` ok · `2` usage · `3` auth · `4` ratelimit · `5` notfound · `6` validation · `7` api · `8` write-gated · `9` stale-cache. Branch on it.
 - Pipe to `jq`. Use `--human` only when a person reads the output; never parse it.
 
 ## Auth
@@ -87,6 +87,20 @@ rex product update 124001 --set brand=Weber             # apply
 Batch enrichment, `--set`/`--file`/`--stdin` rules, and the price gate:
 [references/writing.md](references/writing.md). Worked agent recipes:
 [references/recipes.md](references/recipes.md).
+
+## Sales stats
+
+Revenue / units / gross-profit reports come from a **local SQLite cache** (the
+REST API cannot aggregate or date-filter orders), so `rex sales sync` once, then
+`rex sales report ...` answers offline. Every result embeds `synced_at` +
+`stale_hours`; check `stale_hours` and re-sync before quoting numbers as current.
+
+```bash
+rex sales report --fy 2026 --by salesperson --top 1   # top rep this AU FY
+```
+
+Sync/report commands, JSON envelope, staleness contract, and recipes:
+[references/sales.md](references/sales.md).
 
 ## Escape hatch
 

@@ -1,5 +1,6 @@
-import type { Command } from "commander";
+import { type Command, InvalidArgumentError } from "commander";
 import { createAuth } from "../core/auth";
+import { EXIT } from "../core/errors";
 import { RexClient } from "../core/client";
 import { type Profile, resolveProfile } from "../core/config";
 import { Output, type OutputMode } from "../core/output";
@@ -136,9 +137,17 @@ export function run(deps: ContextDeps, handler: Handler) {
   };
 }
 
-/** Commander option coercer for integer flags. */
+/**
+ * Commander option coercer for integer flags. Rejects non-integers (including
+ * "2026.5", which parseInt would silently truncate) with a clean usage error —
+ * a plain Error here would escape commander as a raw stack trace.
+ */
 export function asInt(value: string): number {
-  const n = Number.parseInt(value, 10);
-  if (Number.isNaN(n)) throw new Error(`expected an integer, got "${value}"`);
+  const n = Number(value);
+  if (!Number.isInteger(n)) {
+    const err = new InvalidArgumentError(`expected an integer, got "${value}".`);
+    err.exitCode = EXIT.USAGE;
+    throw err;
+  }
   return n;
 }
