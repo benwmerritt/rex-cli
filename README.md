@@ -49,7 +49,8 @@ rex api GET outlets                            # raw call to any endpoint
 Commands follow `rex <resource> <action>`. Resources: `product` (p), `inventory`
 (inv), `customer` (c), `order` (o), `supplier` (sup), `outlet`, `product-type`
 (pt), `attribute` (attr), `barcode`, `purchase-order` (po), `transfer` (xfer),
-`loyalty-reason`, `loyalty-history`, `stock-reason`, `stocktake` (st).
+`loyalty-reason`, `loyalty-history`, `stock-reason`, `stocktake` (st), `sales`
+(local-cache stats — see [Sales stats](#sales-stats)).
 
 `rex --help` lists everything; `rex <resource> --help` shows a resource's actions.
 

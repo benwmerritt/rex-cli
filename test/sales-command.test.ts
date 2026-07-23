@@ -86,8 +86,10 @@ const PAGES: Record<string, unknown[]> = {
   "2": [order(3, "2025-09-10T09:00:00+09:30", BOB, 40)],
 };
 
+let lastOrdersUrl = "";
 function ordersHandler(method: string, url: string): unknown {
   if (method !== "GET" || !url.includes("/orders")) throw new Error(`unexpected ${method} ${url}`);
+  lastOrdersUrl = url;
   const page = new URL(url).searchParams.get("page_number") ?? "1";
   return { data: PAGES[page] ?? [], page_number: Number(page), page_size: 2, total_records: 3 };
 }
@@ -236,9 +238,13 @@ describe("rex sales (golden)", () => {
     // Watermark recovered from the already-committed rows, not this run's (empty) pages.
     expect(resumed.watermark).toBe("2025-09-10T09:00:00+09:30");
 
-    // Next run must be incremental, not another ~full re-stream.
+    // Next run must be incremental, not another ~full re-stream, and must ask
+    // the API for the watermark minus the 24h overlap — not just claim it did.
     const next = JSON.parse((await runCli(["sales", "sync"], ordersHandler)).out);
     expect(next.fullSync).toBe(false);
+    expect(new URL(lastOrdersUrl).searchParams.get("modified_since")).toBe(
+      new Date(Date.parse("2025-09-10T09:00:00+09:30") - 24 * 3_600_000).toISOString(),
+    );
   });
 
   it("rejects non-integer --fy with a clean usage error (exit 2)", async () => {

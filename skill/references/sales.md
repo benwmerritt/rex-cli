@@ -43,6 +43,10 @@ Flags: `--by salesperson,outlet,product,month,day` · `--sort revenue|units|prof
   `gross_profit_ex` ride along.
 - **Gross profit** is ex-GST (line revenue minus cached COGS). Never present it
   alongside the inc-GST revenue as one blended figure.
+- **Revenue basis differs by grouping**: product-grouped reports (and
+  `--product`) sum line totals, which exclude freight; every other grouping
+  sums header `order_total`, which includes it. Totals from the two bases are
+  close but not identical — do not reconcile them against each other.
 - Buckets and `--fy`/`--from`/`--to` are store-local (Australia/Adelaide).
   `--fy 2026` = 2025-07-01 → 2026-07-01 exclusive.
 
@@ -98,8 +102,11 @@ Reports also exit `9` when the cache exists but the first sync never completed
 retry the report.
 
 ```bash
-rex sales report --fy 2026 --by salesperson --max-stale 24 || {
-  [ $? -eq 9 ] && rex sales sync && \
-    rex sales report --fy 2026 --by salesperson --max-stale 24
-}
+status=0
+rex sales report --fy 2026 --by salesperson --max-stale 24 || status=$?
+if [ "$status" -eq 9 ]; then
+  rex sales sync && rex sales report --fy 2026 --by salesperson --max-stale 24
+elif [ "$status" -ne 0 ]; then
+  exit "$status"   # don't swallow non-staleness failures
+fi
 ```

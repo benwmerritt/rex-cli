@@ -28,7 +28,8 @@ with `rex auth test` → `{ok:true, outlets:N}`. Pick a tenant with `--profile`.
 `rex <resource> <action> [args] [flags]`. Resources: `product` (p), `inventory`
 (inv), `customer` (c), `order` (o), `supplier` (sup), `outlet`, `product-type`
 (pt), `attribute` (attr), `barcode`, `purchase-order` (po), `transfer` (xfer),
-`loyalty-reason`, `loyalty-history`, `stock-reason`, `stocktake` (st). Full list + flags:
+`loyalty-reason`, `loyalty-history`, `stock-reason`, `stocktake` (st), `sales`
+(local-cache stats — see Sales stats below). Full list + flags:
 [references/commands.md](references/commands.md).
 
 ```bash

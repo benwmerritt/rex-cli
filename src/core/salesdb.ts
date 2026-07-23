@@ -88,6 +88,8 @@ export function openSalesDb(path: string): Database {
   // Customer/sales data: owner-only, like config.toml and the token cache.
   if (path !== ":memory:") chmodSync(path, 0o600);
   db.exec("PRAGMA journal_mode = WAL;");
+  // A concurrent sync/report pair should wait briefly, not die on SQLITE_BUSY.
+  db.exec("PRAGMA busy_timeout = 5000;");
   db.exec(SCHEMA);
   setMeta(db, "schema_version", "1");
   return db;
@@ -141,6 +143,12 @@ export interface OrderItemRow {
  * windows overlap, so the same order is routinely written more than once.
  */
 export function upsertOrder(db: Database, order: OrderRow, items: OrderItemRow[]): void {
+  if (!Number.isFinite(order.createdTs)) {
+    // A NaN created_ts row would silently drop out of every range filter.
+    throw new ValidationError(`order ${order.id} has an unparseable created_on`, {
+      details: { orderId: order.id, createdOn: order.createdOn },
+    });
+  }
   const insertHeader = db.query(
     `INSERT OR REPLACE INTO orders (
        id, created_on, created_ts, day_local, month_local, modified_on,
@@ -191,8 +199,11 @@ export function setMeta(db: Database, key: string, value: string): void {
 
 // ---- reporting -------------------------------------------------------------
 
-export type Dimension = "salesperson" | "outlet" | "product" | "month" | "day";
-export type SortKey = "revenue" | "units" | "profit";
+/** Canonical allow-lists; the CLI derives its flag validation from these. */
+export const DIMENSION_KEYS = ["salesperson", "outlet", "product", "month", "day"] as const;
+export const SORT_KEYS = ["revenue", "units", "profit"] as const;
+export type Dimension = (typeof DIMENSION_KEYS)[number];
+export type SortKey = (typeof SORT_KEYS)[number];
 
 export interface ReportOptions {
   /** Half-open [fromTs, toTs) range in unix ms against orders.created_ts. */

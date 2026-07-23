@@ -6,16 +6,18 @@ import { toHuman } from "../core/output";
 import { resolvePeriod } from "../core/period";
 import {
   type Dimension,
+  DIMENSION_KEYS,
   getMeta,
   openSalesDb,
   runReport,
   salesDbFile,
+  SORT_KEYS,
   type SortKey,
 } from "../core/salesdb";
 import { syncSales } from "../resources/sales";
 
-const DIMENSIONS: ReadonlySet<string> = new Set(["salesperson", "outlet", "product", "month", "day"]);
-const SORTS: ReadonlySet<string> = new Set(["revenue", "units", "profit"]);
+const DIMENSIONS: ReadonlySet<string> = new Set(DIMENSION_KEYS);
+const SORTS: ReadonlySet<string> = new Set(SORT_KEYS);
 
 /** Comma-separated dimensions; deduped, order preserved. No --by = grand total. */
 function parseBy(value: string | undefined): Dimension[] {
@@ -55,7 +57,7 @@ export function registerSales(program: Command, deps: ContextDeps): void {
         try {
           const result = await syncSales(ctx.client(), db, {
             full: Boolean(opts.full),
-            onProgress: (msg) => void process.stderr.write(msg + "\n"),
+            onProgress: (msg) => ctx.output.progress(msg),
           });
           ctx.output.result(result);
         } finally {

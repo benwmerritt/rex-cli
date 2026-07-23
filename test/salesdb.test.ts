@@ -191,6 +191,13 @@ describe("salesdb", () => {
     expect(row).toEqual({ revenue: 935, units: 9, gross_profit_ex: 450, orders: 7 });
   });
 
+  it("rejects unknown dimensions, unknown sort keys, and non-positive top", () => {
+    expect(() => runReport(db, { fromTs: FROM, toTs: TO, by: ["bogus" as never] })).toThrow();
+    expect(() => runReport(db, { fromTs: FROM, toTs: TO, by: [], sort: "bogus" as never })).toThrow();
+    expect(() => runReport(db, { fromTs: FROM, toTs: TO, by: [], top: 0 })).toThrow();
+    expect(() => runReport(db, { fromTs: FROM, toTs: TO, by: [], top: 1.5 })).toThrow();
+  });
+
   it("counts Awaiting Payment orders as Sales (accrual basis)", () => {
     upsertOrder(
       db,
