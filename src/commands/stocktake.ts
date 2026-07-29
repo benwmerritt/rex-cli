@@ -123,7 +123,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
           ok: true,
           updated: result.updated,
           line: result.line,
-          summary: summarizeSession(result.session),
+          summary: summarizeSession(result.session, { wmsStatus: wmsCredentialStatus(profile) }),
         });
       }),
     );
@@ -155,7 +155,11 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         const session = loadSession(storageKey);
         const result = removeLine(session, lineId);
         saveSession(result.session, storageKey);
-        ctx.output.result({ ok: true, removed: result.line, summary: summarizeSession(result.session) });
+        ctx.output.result({
+          ok: true,
+          removed: result.line,
+          summary: summarizeSession(result.session, { wmsStatus: wmsCredentialStatus(profile) }),
+        });
       }),
     );
 

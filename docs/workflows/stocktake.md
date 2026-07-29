@@ -79,7 +79,7 @@ what is missing, where it comes from, and what still works:
 rex stocktake begin --outlet "Example Outlet" --local
 rex stocktake count 124001 6
 rex stocktake review              # submit.available is false, with the reason
-rex --dry-run stocktake submit    # variance preview, no credentials needed
+rex --dry-run stocktake submit    # variance preview; needs the API key, not WMS
 rex stocktake export              # worksheet to type into the Retail Express UI
 rex stocktake abort               # after the adjustments are entered by hand
 ```

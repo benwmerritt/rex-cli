@@ -227,7 +227,16 @@ function submitAvailability(
       hint: "Local sessions never submit. Use `rex stocktake export` for manual entry, or configure WMS and begin a new session.",
     };
   }
-  if (wmsStatus && !wmsStatus.configured) {
+  // No credential state supplied: say so rather than claiming a submit will
+  // work. Claiming `available: true` unchecked is the one wrong answer here.
+  if (!wmsStatus) {
+    return {
+      available: false,
+      reason: "not_checked",
+      hint: "Run `rex stocktake review` or `rex doctor` for the current credential state.",
+    };
+  }
+  if (!wmsStatus.configured) {
     return {
       available: false,
       reason: "wms_not_configured",

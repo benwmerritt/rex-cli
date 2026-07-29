@@ -428,7 +428,9 @@ describe("rex stocktake without WMS credentials", () => {
       REX_PROFILE: "test",
     });
 
-    expect(JSON.parse(started.err).error.details.missing).toContain("wms_client_id / REX_WMS_CLIENT_ID");
+    const details = JSON.parse(started.err).error.details;
+    expect(details.missing).toContain("wms_client_id / REX_WMS_CLIENT_ID");
+    expect(details.missing).not.toContain("stocktake_user_id / REX_STOCKTAKE_USER_ID");
     process.exitCode = 0;
   });
 
@@ -540,6 +542,22 @@ describe("rex stocktake without WMS credentials", () => {
 
     const review = await runCli(["stocktake", "review"], retailExpressFixture, undefined, NO_WMS_ENV);
     expect(JSON.parse(review.out).submit).toMatchObject({
+      available: false,
+      reason: "wms_not_configured",
+    });
+  });
+
+  it("does not claim submit is available on count or remove after the credentials were removed", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+
+    const counted = await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(JSON.parse(counted.out).summary.submit).toMatchObject({
+      available: false,
+      reason: "wms_not_configured",
+    });
+
+    const removed = await runCli(["stocktake", "remove", "124001"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(JSON.parse(removed.out).summary.submit).toMatchObject({
       available: false,
       reason: "wms_not_configured",
     });
