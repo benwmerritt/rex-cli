@@ -144,11 +144,14 @@ export function createSession(input: {
   now?: () => string;
 }): StocktakeSession {
   const now = input.now?.() ?? new Date().toISOString();
+  // A local session carrying a WMS fingerprint would break the invariant the
+  // whole mode rests on, so drop it here rather than trusting every caller.
+  const mode = input.mode ?? "wms";
   return {
     id: `${input.profile}-${Date.now().toString(36)}`,
     profile: input.profile,
-    ...(input.wmsFingerprint ? { wmsFingerprint: input.wmsFingerprint } : {}),
-    mode: input.mode ?? "wms",
+    ...(mode === "wms" && input.wmsFingerprint ? { wmsFingerprint: input.wmsFingerprint } : {}),
+    mode,
     outletId: input.outlet.id,
     outletName: input.outlet.name,
     ...(input.userId === undefined ? {} : { userId: input.userId }),
@@ -213,6 +216,23 @@ export interface SummarizeOptions {
   wmsFingerprint?: string;
 }
 
+/** Why a session cannot be submitted. Agents branch on these, so they are typed. */
+export type SubmitBlockedReason =
+  | "local_session"
+  | "not_checked"
+  | "wms_not_configured"
+  | "missing_user_id"
+  | "wms_credentials_changed";
+
+export interface SubmitAvailability {
+  available: boolean;
+  reason?: SubmitBlockedReason;
+  missing?: string[];
+  source?: string;
+  remedy?: string;
+  hint?: string;
+}
+
 /**
  * Describe whether this session can reach Retail Express, and why not if it
  * can't. Surfaced on every `review` so the limitation is visible during the
@@ -222,7 +242,7 @@ function submitAvailability(
   session: StocktakeSession,
   wmsStatus: CredentialStatus | undefined,
   currentFingerprint: string | undefined,
-): Record<string, unknown> {
+): SubmitAvailability {
   if (sessionMode(session) === "local") {
     return {
       available: false,

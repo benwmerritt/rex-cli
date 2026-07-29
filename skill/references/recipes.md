@@ -47,8 +47,10 @@ selecting the same outlet and product screen repeatedly. The operator gives an
 absolute count; `rex` calculates the variance to submit to WMS.
 
 ```bash
-# 0. confirm the profile can actually submit before the count starts
-rex doctor | jq '.capabilities["stocktake.submit"]'
+# 0. confirm the profile can actually submit before the count starts.
+#    -e exits non-zero when submit is blocked, so this fails closed.
+rex doctor | jq -e '.capabilities["stocktake.submit"].status == "available"' \
+  || echo "blocked — see .blockedBy, and offer `begin --local` instead"
 
 # 1. start the day's session once for the outlet
 rex stocktake begin --outlet "Example Outlet"
