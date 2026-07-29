@@ -132,6 +132,43 @@ Batch enrichment, `--set`/`--file`/`--stdin` rules, and the price gate:
 [references/writing.md](references/writing.md). Worked agent recipes:
 [references/recipes.md](references/recipes.md).
 
+## Outlet pricing
+
+Retail Express prices a Product **per Outlet**. Where an outlet price exists it
+**overrides** the master price on the product record, and nothing on that record
+reveals the override. Two outlets routinely end up selling the same product at
+different prices with no visible cause.
+
+**No Retail Express API can write an outlet price.** Verified: REST v2.1
+`productprices` is GET-only (POST and PUT both 404), and none of the four legacy
+SOAP APIs — Warehouse Management, Webstore, Accounting, Inventory Planning —
+expose a price write. Correcting one is a human action in Retail Express Admin.
+This is a property of the vendor's API, not a missing credential; `rex doctor`
+will not unblock it.
+
+Read them with `rex api GET productprices -q product_id=<id>`, one row per
+outlet. Divergence rule: among rows with `sell_price_inc > 0`, the majority price
+is the consensus and the rest are outliers, in **either** direction. Treat `0` as
+"not priced at that outlet" and skip it. Full audit recipe, single product and
+whole catalogue: [references/recipes.md](references/recipes.md#outlet-price-divergence-read-only).
+
+**Always check, and always say so.** Whenever you inspect a specific product,
+read its per-outlet prices too and report any divergence unprompted — with the
+outlet ids, both prices, and the delta. A silent price gap is a real loss of
+margin or a real overcharge, and nobody goes looking for one they were not told
+about.
+
+Two things not to do:
+
+- **Never write the product master to "fix" an outlet price.** Setting
+  `sell_price_inc` on the product record does not clear or overwrite an outlet
+  override. The outlet keeps its old price, the master silently changes, and you
+  have made a live pricing write that fixed nothing.
+- **Never report an outlet price as fixed.** You cannot make that change. Hand
+  back the product id, the outlet id, the current price, and the target price,
+  then re-read `productprices` once the human says they have done it and confirm
+  from the response before calling it resolved.
+
 ## Sales stats
 
 Revenue / units / gross-profit reports come from a **local SQLite cache** (the

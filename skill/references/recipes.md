@@ -32,6 +32,54 @@ rex product update 124001 --set web_price_inc=499 --allow-price
 The audit log (`~/.local/state/rex/audit.jsonl`) records the before value, so you
 can recover the original price.
 
+## Outlet price divergence (read-only)
+
+Retail Express prices a Product per Outlet. An Outlet price overrides the master
+price, so two outlets can sell the same product at different prices with nothing
+on the product record to show it. **No Retail Express API can write an outlet
+price** — see [Outlet pricing](../SKILL.md#outlet-pricing). This finds them; a
+human fixes them in Admin.
+
+One product:
+
+```bash
+rex api GET productprices -q product_id=124001 \
+  | jq '[.data[] | select(.sell_price_inc > 0)] as $rows
+        | ($rows | group_by(.sell_price_inc) | max_by(length) | .[0].sell_price_inc) as $consensus
+        | {consensus: $consensus,
+           outliers: [$rows[] | select(.sell_price_inc != $consensus)
+                      | {outlet_id, price: .sell_price_inc,
+                         delta: ((.sell_price_inc - $consensus) * 100 | round / 100)}]}'
+```
+
+Whole catalogue. `rex api` is a raw passthrough and does not paginate for you, so
+page explicitly — the parameter is `page_number`, not `page`:
+
+```bash
+p=1
+while :; do
+  body=$(rex api GET productprices -q page_number=$p page_size=250)
+  echo "$body" | jq -c '.data[]' >> /tmp/prices.ndjson
+  read pn ps tr <<<"$(echo "$body" | jq -r '"\(.page_number) \(.page_size) \(.total_records)"')"
+  [ $((pn * ps)) -ge "$tr" ] && break
+  p=$((p + 1))
+done
+
+jq -s 'map(select(.sell_price_inc > 0))
+       | group_by(.product_id)
+       | map((group_by(.sell_price_inc) | max_by(length) | .[0].sell_price_inc) as $c
+             | {product_id: .[0].product_id, consensus: $c,
+                outliers: [.[] | select(.sell_price_inc != $c)
+                           | {outlet_id, price: .sell_price_inc,
+                              delta: ((.sell_price_inc - $c) * 100 | round / 100)}]})
+       | map(select(.outliers | length > 0))' /tmp/prices.ndjson
+```
+
+The majority price is the consensus; the rest are outliers. Rows at `0` are
+skipped as "not priced at that outlet" — including them buries the real findings
+under every unstocked line. Report outliers in both directions: an outlet priced
+*above* consensus is as much an error as one below.
+
 ## Low-stock report (read-only)
 
 ```bash
