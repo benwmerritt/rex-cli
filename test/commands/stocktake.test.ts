@@ -83,7 +83,7 @@ async function runCli(
 }
 
 function retailExpressFixture(method: string, url: string): unknown {
-  if (url.endsWith("/outlets/3")) return { id: 3, name: "Mile End" };
+  if (url.endsWith("/outlets/3")) return { id: 3, name: "Example Outlet" };
   if (url.includes("/products?")) {
     return { data: [], page_number: 1, page_size: 10, total_records: 0 };
   }
@@ -266,7 +266,7 @@ describe("rex stocktake", () => {
       ["stocktake", "begin", "--outlet", "3"],
       retailExpressFixture,
       undefined,
-      { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "-1" },
+      { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "-1", ...WMS_ENV },
     );
 
     expect(started.out).toBe("");
@@ -398,6 +398,150 @@ describe("rex stocktake", () => {
       clear: {
         warning: "Stocktake abort could not clear the local session.",
       },
+    });
+  });
+});
+
+const NO_WMS_ENV = { REX_API_KEY: "K", REX_PROFILE: "test", REX_STOCKTAKE_USER_ID: "4" };
+
+describe("rex stocktake without WMS credentials", () => {
+  it("names every missing credential and the work still available", async () => {
+    const started = await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture, undefined, NO_WMS_ENV);
+
+    expect(started.out).toBe("");
+    const error = JSON.parse(started.err).error;
+    expect(error.code).toBe("validation");
+    expect(error.details.missing).toEqual([
+      "wms_client_id / REX_WMS_CLIENT_ID",
+      "wms_username / REX_WMS_USERNAME",
+      "wms_password / REX_WMS_PASSWORD",
+      "wms_url / REX_WMS_URL",
+    ]);
+    expect(error.details.source).toContain("Retail Express support");
+    expect(error.details.stillAvailable.join(" ")).toContain("--local");
+    process.exitCode = 0;
+  });
+
+  it("reports the WMS gap before the user id gap, since it is the harder one to close", async () => {
+    const started = await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture, undefined, {
+      REX_API_KEY: "K",
+      REX_PROFILE: "test",
+    });
+
+    expect(JSON.parse(started.err).error.details.missing).toContain("wms_client_id / REX_WMS_CLIENT_ID");
+    process.exitCode = 0;
+  });
+
+  it("counts, exports a worksheet, and previews the payload in local mode", async () => {
+    const started = await runCli(
+      ["stocktake", "begin", "--outlet", "3", "--local"],
+      retailExpressFixture,
+      undefined,
+      NO_WMS_ENV,
+    );
+    expect(JSON.parse(started.out)).toMatchObject({
+      ok: true,
+      session: { mode: "local", outletId: 3, submit: { available: false, reason: "local_session" } },
+    });
+
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture, undefined, NO_WMS_ENV);
+
+    const exported = await runCli(["stocktake", "export"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(JSON.parse(exported.out)).toMatchObject({
+      ok: true,
+      mode: "local",
+      worksheet: {
+        outletId: 3,
+        adjustments: [{ productId: 124001, systemStock: 8, countedStock: 6, variance: -2 }],
+        totals: { counted: 1, needingAdjustment: 1, alreadyMatching: 0 },
+      },
+    });
+
+    // The dry run is local arithmetic, so it must not require WMS credentials.
+    const preview = await runCli(["--dry-run", "stocktake", "submit"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(JSON.parse(preview.out)).toMatchObject({
+      dryRun: true,
+      submitLines: 1,
+      payload: { outletId: 3, items: [{ productId: 124001, variance: -2 }] },
+    });
+    expect(preview.err).toBe("");
+  });
+
+  it("keeps zero-variance lines out of the worksheet adjustments", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3", "--local"], retailExpressFixture, undefined, NO_WMS_ENV);
+    await runCli(["stocktake", "count", "124001", "8"], retailExpressFixture, undefined, NO_WMS_ENV);
+
+    const exported = await runCli(["stocktake", "export"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(JSON.parse(exported.out).worksheet).toMatchObject({
+      adjustments: [],
+      alreadyMatching: [{ productId: 124001, stock: 8 }],
+      totals: { counted: 1, needingAdjustment: 0, alreadyMatching: 1 },
+    });
+  });
+
+  it("refuses to submit a local session and preserves it", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3", "--local"], retailExpressFixture, undefined, NO_WMS_ENV);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture, undefined, NO_WMS_ENV);
+
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(submitted.out).toBe("");
+    expect(JSON.parse(submitted.err).error).toMatchObject({
+      code: "validation",
+      message: "This is a local stocktake session and cannot be submitted to Retail Express.",
+      details: { stocktakeSession: { preserved: true } },
+    });
+
+    process.exitCode = 0;
+    const review = await runCli(["stocktake", "review"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(JSON.parse(review.out)).toMatchObject({ mode: "local", totalLines: 1 });
+  });
+
+  it("still refuses a local session once WMS credentials appear, rather than submitting a count it cannot vouch for", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3", "--local"], retailExpressFixture, undefined, NO_WMS_ENV);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture, undefined, NO_WMS_ENV);
+
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture);
+    expect(JSON.parse(submitted.err).error.details.note).toContain("began without them");
+    process.exitCode = 0;
+  });
+
+  it("treats a session written before local mode existed as a WMS session", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    const sessionFile = activeSessionPath();
+    const legacy = JSON.parse(readFileSync(sessionFile, "utf8"));
+    delete legacy.mode;
+    writeFileSync(sessionFile, JSON.stringify(legacy));
+
+    const review = await runCli(["stocktake", "review"], retailExpressFixture);
+    expect(JSON.parse(review.out)).toMatchObject({ mode: "wms", submit: { available: true } });
+  });
+
+  it("still refuses a dry run when the WMS credentials changed mid-count", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+
+    const rotated = { ...WMS_ENV, REX_WMS_CLIENT_ID: "client-b" };
+    const preview = await runCli(["--dry-run", "stocktake", "submit"], retailExpressFixture, undefined, {
+      REX_API_KEY: "K",
+      REX_PROFILE: "test",
+      REX_STOCKTAKE_USER_ID: "4",
+      ...rotated,
+    });
+
+    expect(preview.out).toBe("");
+    expect(JSON.parse(preview.err).error.message).toBe(
+      "Stocktake WMS credentials changed since this session began.",
+    );
+    process.exitCode = 0;
+  });
+
+  it("marks submit unavailable on review when the credentials were removed mid-count", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+
+    const review = await runCli(["stocktake", "review"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(JSON.parse(review.out).submit).toMatchObject({
+      available: false,
+      reason: "wms_not_configured",
     });
   });
 });

@@ -1,11 +1,13 @@
 import type { Command } from "commander";
 import { type ContextDeps, run } from "../cli/context";
 import { appendAudit } from "../core/audit";
+import { stocktakeUserIdStatus, wmsCredentialStatus } from "../core/capabilities";
 import { resolveStocktakeUserId } from "../core/config";
 import { ApiError, EXIT, RexError, ValidationError } from "../core/errors";
 import { parsePositiveInt } from "../core/validation";
-import { requireWmsConfig, wmsConfigFingerprint } from "../core/wms";
+import { requireWmsConfig, STOCKTAKE_WITHOUT_WMS, wmsConfigFingerprint } from "../core/wms";
 import {
+  buildWorksheet,
   clearSession,
   createSession,
   fetchOutletInventory,
@@ -16,6 +18,7 @@ import {
   resolveProduct,
   saveSession,
   sessionExists,
+  sessionMode,
   sessionStorageKey,
   summarizeSession,
   upsertLine,
@@ -33,6 +36,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .description("Start a local stocktake session for one outlet")
     .requiredOption("--outlet <id-or-name>", "Retail Express outlet id or name for this stocktake")
     .option("--user-id <id>", "Retail Express user id for WMS stocktake submission")
+    .option("--local", "count without WMS credentials; export a worksheet instead of submitting")
     .option("--force", "replace an existing active stocktake session")
     .action(
       run(deps, async (ctx, opts) => {
@@ -44,23 +48,56 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
             details: { hint: "Run `rex stocktake review`, `rex stocktake submit`, or `rex stocktake abort`." },
           });
         }
+
+        const local = Boolean(opts.local);
+        // Check the credential set before the user id: a missing WMS account is
+        // the larger blocker and the one with a non-obvious remedy, so it should
+        // be what the operator sees first.
+        const wmsConfig = local ? undefined : requireWmsConfig(profile);
+
         const explicitUserId = opts.userId === undefined ? undefined : parsePositiveInt(opts.userId, "--user-id");
         const userId = explicitUserId ?? resolveStocktakeUserId(profile);
-        if (!userId) {
-          throw new ValidationError("Stocktake user id is required.", {
-            details: { hint: "Use --user-id or configure stocktake_user_id with `rex config wms`." },
+        if (!local && !userId) {
+          const status = stocktakeUserIdStatus(profile);
+          throw new ValidationError("Stocktake user id is required to submit to Retail Express.", {
+            details: {
+              missing: status.missing,
+              source: status.source,
+              remedy: status.remedy,
+              stillAvailable: STOCKTAKE_WITHOUT_WMS,
+            },
           });
         }
-        const wmsConfig = requireWmsConfig(profile);
+
         const outlet = await resolveOutlet(ctx.client(), opts.outlet as string);
         const session = createSession({
           profile: profile.name,
-          wmsFingerprint: wmsConfigFingerprint(wmsConfig),
+          ...(wmsConfig ? { wmsFingerprint: wmsConfigFingerprint(wmsConfig) } : {}),
+          mode: local ? "local" : "wms",
           outlet,
           userId,
         });
         saveSession(session, storageKey);
-        ctx.output.result({ ok: true, session: summarizeSession(session) });
+        ctx.output.result({
+          ok: true,
+          session: summarizeSession(session, { wmsStatus: wmsCredentialStatus(profile) }),
+        });
+      }),
+    );
+
+  stocktake
+    .command("export")
+    .description("Emit a counted-vs-system worksheet for manual entry in Retail Express")
+    .action(
+      run(deps, (ctx) => {
+        const profile = ctx.profile();
+        const session = loadSession(sessionStorageKey(profile));
+        ctx.output.result({
+          ok: true,
+          mode: sessionMode(session),
+          worksheet: buildWorksheet(session),
+          hint: "Apply each adjustment in the Retail Express UI, then run `rex stocktake abort` to clear the local session.",
+        });
       }),
     );
 
@@ -98,7 +135,11 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
     .action(
       run(deps, (ctx) => {
         const profile = ctx.profile();
-        ctx.output.result(summarizeSession(loadSession(sessionStorageKey(profile))));
+        ctx.output.result(
+          summarizeSession(loadSession(sessionStorageKey(profile)), {
+            wmsStatus: wmsCredentialStatus(profile),
+          }),
+        );
       }),
     );
 
@@ -126,15 +167,23 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         const profile = ctx.profile();
         const storageKey = sessionStorageKey(profile);
         const session = loadSession(storageKey);
-        assertSessionWmsIdentity(session, wmsConfigFingerprint(requireWmsConfig(profile)));
+        const wmsStatus = wmsCredentialStatus(profile);
         const submitLines = session.lines.filter((line) => line.variance !== 0);
         const payload = {
           outletId: session.outletId,
-          userId: session.userId,
+          userId: session.userId ?? null,
           items: submitLines.map((line) => ({ productId: line.productId, variance: line.variance })),
         };
 
+        // The dry run is pure local arithmetic, so it stays available without
+        // WMS credentials — an operator can verify the variances are right
+        // before deciding whether chasing the credentials is worth it. When
+        // credentials *are* present it still refuses on a mid-count swap, so
+        // the preview never describes a submit that would be rejected.
         if (ctx.dryRun) {
+          if (sessionMode(session) === "wms" && wmsStatus.configured) {
+            assertSessionWmsIdentity(session, wmsConfigFingerprint(requireWmsConfig(profile)));
+          }
           ctx.output.result({
             ok: true,
             dryRun: true,
@@ -142,10 +191,38 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
             submitLines: submitLines.length,
             skippedZeroVariance: session.lines.length - submitLines.length,
             payload,
-            session: summarizeSession(session),
+            session: summarizeSession(session, { wmsStatus }),
           });
           return;
         }
+
+        if (sessionMode(session) === "local") {
+          throw new ValidationError(
+            "This is a local stocktake session and cannot be submitted to Retail Express.",
+            {
+              details: {
+                ...(wmsStatus.configured
+                  ? { note: "WMS credentials are configured now, but this session began without them." }
+                  : { missing: wmsStatus.missing, source: wmsStatus.source, remedy: wmsStatus.remedy }),
+                stillAvailable: STOCKTAKE_WITHOUT_WMS,
+                hint: "Run `rex stocktake export` for a manual-entry worksheet, or configure WMS and begin a new session.",
+                stocktakeSession: { preserved: true },
+              },
+            },
+          );
+        }
+
+        const userId = session.userId;
+        if (userId === undefined) {
+          throw new ValidationError("Stocktake session has no Retail Express user id to attribute the submission to.", {
+            details: {
+              hint: "Run `rex stocktake abort` and begin again with `--user-id <id>`.",
+              stocktakeSession: { preserved: true },
+            },
+          });
+        }
+        assertSessionWmsIdentity(session, wmsConfigFingerprint(requireWmsConfig(profile)));
+        const submitPayload = { ...payload, userId };
 
         if (submitLines.length === 0) {
           const clearResult = clearLocalSession(storageKey, {
@@ -165,7 +242,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
 
         let result: unknown;
         try {
-          result = await ctx.wmsClient().createStocktake(payload);
+          result = await ctx.wmsClient().createStocktake(submitPayload);
         } catch (err) {
           throw submitFailureError(err);
         }
@@ -187,7 +264,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
               counted: line.counted,
               currentStock: line.currentStock,
             })),
-            after: payload,
+            after: submitPayload,
           });
         } catch (err) {
           auditWarning = {

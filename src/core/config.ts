@@ -9,9 +9,18 @@ import { parseOptionalPositiveInt, validateSafeProfileName } from "./validation"
 export const DEFAULT_BASE_URL = "https://api.retailexpress.com.au";
 export const DEFAULT_VERSION = "v2.1";
 
+/**
+ * Where a resolved profile came from. `env` profiles are synthesised from
+ * `REX_API_KEY` and have no entry in config.toml — so `rex config wms` cannot
+ * write to them, and any `wms_*` already in config.toml is ignored for the
+ * duration. Advice about fixing credentials has to branch on this.
+ */
+export type ProfileSource = "env" | "config";
+
 /** A resolved, ready-to-use profile (every field populated). */
 export interface Profile {
   name: string;
+  source: ProfileSource;
   apiKey: string;
   baseUrl: string;
   version: string;
@@ -99,6 +108,7 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
     const envProfile = env.REX_PROFILE?.trim() || undefined;
     return {
       name: envProfileName(envKey, envProfile),
+      source: "env",
       apiKey: envKey,
       baseUrl: env.REX_BASE_URL?.trim() || DEFAULT_BASE_URL,
       version: env.REX_VERSION?.trim() || DEFAULT_VERSION,
@@ -133,6 +143,7 @@ export function resolveProfile(opts: ResolveOptions = {}): Profile {
 
   return {
     name,
+    source: "config",
     apiKey: raw.api_key,
     baseUrl: raw.base_url?.trim() || DEFAULT_BASE_URL,
     version: raw.version?.trim() || DEFAULT_VERSION,

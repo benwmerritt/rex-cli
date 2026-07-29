@@ -69,6 +69,10 @@ Store WMS SOAP credentials for stocktake workflows
 | `--url <url>` | Retail Express WMS service URL (or REX_WMS_URL) |
 | `--stocktake-user-id <id>` | Retail Express user id for stocktake submissions |
 
+### `rex doctor`
+
+Report which credentials are configured and which workflows they unlock
+
 ### `rex api <method> <path>`
 
 Raw passthrough to the Retail Express API (escape hatch for un-wrapped endpoints)
@@ -413,7 +417,12 @@ Start a local stocktake session for one outlet
 | --- | --- |
 | `--outlet <id-or-name>` | Retail Express outlet id or name for this stocktake |
 | `--user-id <id>` | Retail Express user id for WMS stocktake submission |
+| `--local` | count without WMS credentials; export a worksheet instead of submitting |
 | `--force` | replace an existing active stocktake session |
+
+### `rex stocktake export`
+
+Emit a counted-vs-system worksheet for manual entry in Retail Express
 
 ### `rex stocktake count <query>`
 

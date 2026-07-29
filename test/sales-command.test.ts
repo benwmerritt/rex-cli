@@ -50,7 +50,7 @@ async function runCli(argv: string[], handler: (method: string, url: string) => 
 }
 
 // Two fake order pages (server page_size 2, total 3): Jane sells twice at
-// Mile End in Aug/Sep 2025 (FY2026), Bob once. Item on order 1 is qty 2.
+// Example Outlet in Aug/Sep 2025 (FY2026), Bob once. Item on order 1 is qty 2.
 function order(id: number, createdOn: string, sp: { id: number; name: string }, total: number) {
   const [first, surname] = sp.name.split(" ");
   return {
@@ -59,7 +59,7 @@ function order(id: number, createdOn: string, sp: { id: number; name: string }, 
     modified_on: createdOn,
     order_status: { id: 12, status: "Processed" },
     sales_person: { id: sp.id, first_name: first, surname },
-    outlet: { id: 2, name: "Mile End" },
+    outlet: { id: 2, name: "Example Outlet" },
     order_total: total,
     freight_total: 0,
     customer: { id: 100001 },

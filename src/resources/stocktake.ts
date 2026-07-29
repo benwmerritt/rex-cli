@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import type { CredentialStatus } from "../core/capabilities";
 import type { RexClient } from "../core/client";
 import { NotFoundError, ValidationError } from "../core/errors";
 import { stocktakeSessionFile } from "../core/paths";
@@ -8,16 +9,34 @@ import type { ListEnvelope } from "../core/paginate";
 import { getProduct, listProducts, type Product } from "./products";
 import { getResource, listResource } from "./crud";
 
+/**
+ * `wms` sessions are bound to a WMS credential set at `begin` and can be
+ * submitted. `local` sessions are opened without WMS credentials: they count,
+ * price variances against live stock, and export a worksheet, but can never
+ * reach Retail Express. The mode is fixed at `begin` so a session can't quietly
+ * change meaning halfway through a count.
+ */
+export type StocktakeMode = "wms" | "local";
+
 export interface StocktakeSession {
   id: string;
   profile: string;
+  /** Present only on `wms` sessions — identifies the credentials in force at `begin`. */
   wmsFingerprint?: string;
+  /** Absent on sessions written before local mode existed; those are `wms`. */
+  mode?: StocktakeMode;
   outletId: number;
   outletName?: string;
-  userId: number;
+  /** Required to submit, so optional on `local` sessions. */
+  userId?: number;
   createdAt: string;
   updatedAt: string;
   lines: StocktakeLine[];
+}
+
+/** Sessions written before local mode existed always required WMS credentials. */
+export function sessionMode(session: StocktakeSession): StocktakeMode {
+  return session.mode ?? "wms";
 }
 
 export interface StocktakeLine {
@@ -119,8 +138,9 @@ export function clearSession(profile: string): void {
 export function createSession(input: {
   profile: string;
   wmsFingerprint?: string;
+  mode?: StocktakeMode;
   outlet: OutletRef;
-  userId: number;
+  userId?: number;
   now?: () => string;
 }): StocktakeSession {
   const now = input.now?.() ?? new Date().toISOString();
@@ -128,9 +148,10 @@ export function createSession(input: {
     id: `${input.profile}-${Date.now().toString(36)}`,
     profile: input.profile,
     ...(input.wmsFingerprint ? { wmsFingerprint: input.wmsFingerprint } : {}),
+    mode: input.mode ?? "wms",
     outletId: input.outlet.id,
     outletName: input.outlet.name,
-    userId: input.userId,
+    ...(input.userId === undefined ? {} : { userId: input.userId }),
     createdAt: now,
     updatedAt: now,
     lines: [],
@@ -185,11 +206,56 @@ export function removeLine(
   return { session, line: removed! };
 }
 
-export function summarizeSession(session: StocktakeSession): Record<string, unknown> {
+export interface SummarizeOptions {
+  /** WMS credential state, so the summary can say whether `submit` will work. */
+  wmsStatus?: CredentialStatus;
+}
+
+/**
+ * Describe whether this session can reach Retail Express, and why not if it
+ * can't. Surfaced on every `review` so the limitation is visible during the
+ * count rather than at submit time.
+ */
+function submitAvailability(
+  session: StocktakeSession,
+  wmsStatus: CredentialStatus | undefined,
+): Record<string, unknown> {
+  if (sessionMode(session) === "local") {
+    return {
+      available: false,
+      reason: "local_session",
+      hint: "Local sessions never submit. Use `rex stocktake export` for manual entry, or configure WMS and begin a new session.",
+    };
+  }
+  if (wmsStatus && !wmsStatus.configured) {
+    return {
+      available: false,
+      reason: "wms_not_configured",
+      missing: wmsStatus.missing,
+      source: wmsStatus.source,
+      remedy: wmsStatus.remedy,
+    };
+  }
+  if (session.userId === undefined) {
+    return {
+      available: false,
+      reason: "missing_user_id",
+      hint: "Begin a new session with `--user-id <id>` or configure `stocktake_user_id`.",
+    };
+  }
+  return { available: true };
+}
+
+export function summarizeSession(
+  session: StocktakeSession,
+  options: SummarizeOptions = {},
+): Record<string, unknown> {
   const nonZero = session.lines.filter((line) => line.variance !== 0);
   return {
     id: session.id,
     profile: session.profile,
+    mode: sessionMode(session),
+    submit: submitAvailability(session, options.wmsStatus),
     outletId: session.outletId,
     outletName: session.outletName,
     userId: session.userId,
@@ -201,6 +267,40 @@ export function summarizeSession(session: StocktakeSession): Record<string, unkn
     positiveVariance: nonZero.filter((line) => line.variance > 0).reduce((sum, line) => sum + line.variance, 0),
     negativeVariance: nonZero.filter((line) => line.variance < 0).reduce((sum, line) => sum + line.variance, 0),
     lines: session.lines,
+  };
+}
+
+/**
+ * The counted-vs-system worksheet a human types into the Retail Express UI when
+ * WMS submission isn't available. Only non-zero variances need action, so they
+ * are listed separately from the lines that already agree.
+ */
+export function buildWorksheet(session: StocktakeSession): Record<string, unknown> {
+  const adjust = session.lines.filter((line) => line.variance !== 0);
+  const matched = session.lines.filter((line) => line.variance === 0);
+  return {
+    sessionId: session.id,
+    outletId: session.outletId,
+    outletName: session.outletName,
+    countedAt: session.updatedAt,
+    adjustments: adjust.map((line) => ({
+      productId: line.productId,
+      description: line.description,
+      sku: line.sku,
+      systemStock: line.currentStock,
+      countedStock: line.counted,
+      variance: line.variance,
+    })),
+    alreadyMatching: matched.map((line) => ({
+      productId: line.productId,
+      description: line.description,
+      stock: line.currentStock,
+    })),
+    totals: {
+      counted: session.lines.length,
+      needingAdjustment: adjust.length,
+      alreadyMatching: matched.length,
+    },
   };
 }
 

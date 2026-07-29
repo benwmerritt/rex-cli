@@ -89,7 +89,7 @@ describe("stocktake resource helpers", () => {
   it("calculates variance from the absolute counted quantity", () => {
     const session = createSession({
       profile: "test",
-      outlet: { id: 3, name: "Mile End" },
+      outlet: { id: 3, name: "Example Outlet" },
       userId: 4,
       now: () => "2026-06-18T00:00:00.000Z",
     });
@@ -195,12 +195,12 @@ describe("stocktake resource helpers", () => {
       const params = new URL(url).searchParams;
       expect(params.get("page_size")).toBe("250");
       if (params.get("page_number") === "1") return listResponse(firstPage, 1, 251, 250);
-      return listResponse([{ id: 3, name: "Mile End" }], 2, 251, 250);
+      return listResponse([{ id: 3, name: "Example Outlet" }], 2, 251, 250);
     });
 
-    const result = await resolveOutlet(client, "Mile End");
+    const result = await resolveOutlet(client, "Example Outlet");
 
-    expect(result).toEqual({ id: 3, name: "Mile End" });
+    expect(result).toEqual({ id: 3, name: "Example Outlet" });
     expect(calls.map((call) => new URL(call.url).searchParams.get("page_number"))).toEqual(["1", "2"]);
   });
 
@@ -208,8 +208,8 @@ describe("stocktake resource helpers", () => {
     const { client } = makeClient(() =>
       listResponse(
         [
-          { id: 4, name: "Mile End South" },
-          { id: 3, name: "Mile End" },
+          { id: 4, name: "Example Outlet South" },
+          { id: 3, name: "Example Outlet" },
         ],
         1,
         2,
@@ -217,16 +217,16 @@ describe("stocktake resource helpers", () => {
       ),
     );
 
-    await expect(resolveOutlet(client, "Mile End")).resolves.toEqual({ id: 3, name: "Mile End" });
+    await expect(resolveOutlet(client, "Example Outlet")).resolves.toEqual({ id: 3, name: "Example Outlet" });
   });
 
   it("resolveOutlet validates numeric outlet ids and returns the outlet name", async () => {
     const { client, calls } = makeClient((_method, url) => {
-      if (url.endsWith("/outlets/3")) return { id: 3, name: "Mile End" };
+      if (url.endsWith("/outlets/3")) return { id: 3, name: "Example Outlet" };
       throw new Error(`unexpected URL: ${url}`);
     });
 
-    await expect(resolveOutlet(client, "3")).resolves.toEqual({ id: 3, name: "Mile End" });
+    await expect(resolveOutlet(client, "3")).resolves.toEqual({ id: 3, name: "Example Outlet" });
     expect(calls.map((call) => new URL(call.url).pathname)).toEqual(["/v2.1/outlets/3"]);
   });
 

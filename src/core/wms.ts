@@ -1,7 +1,19 @@
 import { createHash } from "node:crypto";
+import { wmsCredentialStatus } from "./capabilities";
 import type { Profile } from "./config";
 import { ApiError, ValidationError } from "./errors";
 import { fetchTransport, type Transport } from "./transport";
+
+/**
+ * What a stocktake can still do when the WMS credential set is absent. Attached
+ * to every "no WMS" error so an agent can offer the operator the degraded path
+ * instead of stopping at the wall.
+ */
+export const STOCKTAKE_WITHOUT_WMS = [
+  "rex stocktake begin --local — count against live stock and compute variances offline",
+  "rex stocktake export — emit a counted-vs-system worksheet for manual entry in Retail Express",
+  "rex --dry-run stocktake submit — preview the variance payload a real submit would send",
+] as const;
 
 export interface WmsConfig {
   clientId: string;
@@ -55,28 +67,25 @@ export interface WmsClientOptions {
 export const DEFAULT_WMS_TIMEOUT_MS = 30_000;
 
 export function requireWmsConfig(profile: Profile): WmsConfig {
-  const clientId = profile.wmsClientId;
-  const username = profile.wmsUsername;
-  const password = profile.wmsPassword;
-  const url = profile.wmsUrl;
-  const missing: string[] = [];
-  if (!clientId) missing.push("wms_client_id / REX_WMS_CLIENT_ID");
-  if (!username) missing.push("wms_username / REX_WMS_USERNAME");
-  if (!password) missing.push("wms_password / REX_WMS_PASSWORD");
-  if (!url) missing.push("wms_url / REX_WMS_URL");
-  if (missing.length > 0) {
-    throw new ValidationError("WMS SOAP credentials are required for stocktake.", {
-      details: {
-        missing,
-        hint: "Run `rex config wms <profile> --client-id ... --username ... --password ... --url ...`.",
+  const status = wmsCredentialStatus(profile);
+  if (!status.configured) {
+    throw new ValidationError(
+      "WMS SOAP credentials are not configured. This credential set is separate from the REST API key and cannot be derived from it.",
+      {
+        details: {
+          missing: status.missing,
+          source: status.source,
+          remedy: status.remedy,
+          stillAvailable: STOCKTAKE_WITHOUT_WMS,
+        },
       },
-    });
+    );
   }
   return {
-    clientId: clientId!,
-    username: username!,
-    password: password!,
-    url: url!,
+    clientId: profile.wmsClientId!,
+    username: profile.wmsUsername!,
+    password: profile.wmsPassword!,
+    url: profile.wmsUrl!,
   };
 }
 

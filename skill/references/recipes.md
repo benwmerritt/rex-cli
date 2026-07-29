@@ -47,8 +47,11 @@ selecting the same outlet and product screen repeatedly. The operator gives an
 absolute count; `rex` calculates the variance to submit to WMS.
 
 ```bash
+# 0. confirm the profile can actually submit before the count starts
+rex doctor | jq '.capabilities["stocktake.submit"]'
+
 # 1. start the day's session once for the outlet
-rex stocktake begin --outlet "Mile End"
+rex stocktake begin --outlet "Example Outlet"
 
 # 2. count products as the operator says them
 rex stocktake count weber q 2200 6
@@ -77,6 +80,24 @@ Safety:
 - If `rex stocktake submit` times out, check WMS for an existing
   awaiting-authorisation stocktake before retrying; the request may have reached
   the server.
+
+## Stocktake without WMS credentials
+
+`stocktake.submit` is the only capability that needs the WMS SOAP account. When
+it is missing, count anyway and hand back a worksheet — the physical count is
+the expensive part, and it is not wasted.
+
+```bash
+rex stocktake begin --outlet "Example Outlet" --local
+rex stocktake count 124001 6
+rex stocktake export | jq '.worksheet.adjustments'
+rex stocktake abort            # once the operator has entered them by hand
+```
+
+Report the blocker in the operator's terms: which credentials are missing (from
+`details.missing`), that they come from Retail Express support, and that the
+Web Services Interface licence must be enabled. Do not ask them to send the
+credentials to you.
 
 ## Find then act by id
 

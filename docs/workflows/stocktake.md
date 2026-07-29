@@ -5,18 +5,39 @@ enter counts into Retail Express. The workflow sets the outlet once, accepts
 absolute counted quantities, calculates variances from current stock, and
 submits a Retail Express stocktake awaiting manual authorisation.
 
+## What Needs Which Credential
+
+`rex` uses two unrelated credential sets. The REST API key covers the whole
+catalogue, including the live stock figures a count is measured against. WMS
+SOAP covers exactly one thing: creating the stocktake in Retail Express.
+
+Run `rex doctor` to see which are configured on the active profile and which
+workflows each unlocks:
+
+```bash
+rex doctor
+```
+
+| Step | Needs |
+| --- | --- |
+| `stocktake begin --local`, `count`, `review`, `export` | REST API key |
+| `--dry-run stocktake submit` | REST API key |
+| `stocktake begin`, `stocktake submit` | REST API key + WMS SOAP + user id |
+
 ## One-Time Setup
 
-WMS configuration is a mandatory prerequisite for daily counting. Configure it
-on the profile you will use before running `rex stocktake begin`.
-
-Get these WMS details from Retail Express support or the account admin:
+Get these WMS details from Retail Express support or the account admin. They
+cannot be derived from the API key or looked up through the REST API:
 
 - WMS client GUID
 - WMS service URL
 - WMS username and password
 - Retail Express user id for stocktake submissions
 - Confirmation that the Web Services Interface licence is enabled
+
+If any are missing, `rex stocktake begin` reports which ones and points at
+`--local` so counting can proceed while you chase them — see
+[Counting Without WMS](#counting-without-wms).
 
 Use a separate tenant-scoped profile for each Retail Express tenant. Stocktake
 sessions and WMS credentials are stored per profile, so reusing a profile across
@@ -25,8 +46,8 @@ tenants can carry stale state forward. See the
 guidance.
 
 Profile names may contain letters, numbers, dot, underscore, and hyphen. Valid
-examples: `mile-end`, `mile_end`. Invalid examples: `mile end`, `tenant/one`;
-these are rejected with `Unsafe profile name for filesystem path`.
+examples: `north-store`, `north_store`. Invalid examples: `north store`,
+`tenant/one`; these are rejected with `Unsafe profile name for filesystem path`.
 
 Store the WMS details on the existing profile:
 
@@ -39,12 +60,46 @@ rex config wms default \
   --stocktake-user-id <rex-user-id>
 ```
 
+## Counting Without WMS
+
+If the WMS credentials aren't available yet, `begin` refuses and says exactly
+what is missing, where it comes from, and what still works:
+
+```json
+{"error":{"code":"validation",
+  "message":"WMS SOAP credentials are not configured. This credential set is separate from the REST API key and cannot be derived from it.",
+  "details":{"missing":["wms_client_id / REX_WMS_CLIENT_ID","..."],
+             "source":"Request from Retail Express support ...",
+             "stillAvailable":["rex stocktake begin --local — ...","..."]}}}
+```
+
+`--local` starts a count-only session. Everything except the submit works:
+
+```bash
+rex stocktake begin --outlet "Example Outlet" --local
+rex stocktake count 124001 6
+rex stocktake review              # submit.available is false, with the reason
+rex --dry-run stocktake submit    # variance preview, no credentials needed
+rex stocktake export              # worksheet to type into the Retail Express UI
+rex stocktake abort               # after the adjustments are entered by hand
+```
+
+`export` splits the count into `adjustments` (non-zero variance, needs action)
+and `alreadyMatching`, so only the lines that changed get retyped.
+
+A local session cannot be submitted later, even once WMS credentials are
+configured — it never recorded which WMS tenant it belonged to, and the
+[tenant isolation](#one-time-setup) guarantee depends on that binding. Begin a
+fresh session to submit.
+
+`--user-id` is not required in local mode, because nothing is attributed.
+
 ## Daily Counting
 
 Start one session for the outlet:
 
 ```bash
-rex stocktake begin --outlet "Mile End"
+rex stocktake begin --outlet "Example Outlet"
 ```
 
 `--user-id` is optional only when `stocktake_user_id` was configured with
