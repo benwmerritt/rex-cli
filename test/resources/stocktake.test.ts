@@ -104,6 +104,24 @@ describe("stocktake resource helpers", () => {
     expect(summarizeSession(session)).toMatchObject({ totalLines: 1, submitLines: 1, negativeVariance: -2 });
   });
 
+  it("refuses to vouch for submit when no credential state was supplied", () => {
+    const session = createSession({ profile: "test", outlet: { id: 3 }, userId: 4 });
+
+    expect(summarizeSession(session).submit).toMatchObject({
+      available: false,
+      reason: "not_checked",
+    });
+  });
+
+  it("reports a local session as unsubmittable regardless of credential state", () => {
+    const session = createSession({ profile: "test", mode: "local", outlet: { id: 3 } });
+
+    expect(summarizeSession(session, { wmsStatus: { configured: true, missing: [] } }).submit).toMatchObject({
+      available: false,
+      reason: "local_session",
+    });
+  });
+
   it("updates an existing line when the same product is counted again", () => {
     const session = createSession({ profile: "test", outlet: { id: 3 }, userId: 4 });
     upsertLine(session, { query: "weber q", product, counted: 6, currentStock: 8 });

@@ -222,6 +222,7 @@ export type SubmitBlockedReason =
   | "not_checked"
   | "wms_not_configured"
   | "missing_user_id"
+  | "missing_wms_identity"
   | "wms_credentials_changed";
 
 export interface SubmitAvailability {
@@ -275,8 +276,15 @@ function submitAvailability(
       hint: "Begin a new session with `--user-id <id>` or configure `stocktake_user_id`.",
     };
   }
-  // Credentials rotated mid-count: submit would refuse, so the summary must not
-  // promise otherwise.
+  // These two mirror `assertSessionWmsIdentity`, which submit enforces — the
+  // summary and the gate must give the same answer for the same reason.
+  if (!session.wmsFingerprint) {
+    return {
+      available: false,
+      reason: "missing_wms_identity",
+      hint: "Run `rex stocktake abort` and start a new stocktake with the current WMS credentials.",
+    };
+  }
   if (currentFingerprint !== undefined && session.wmsFingerprint !== currentFingerprint) {
     return {
       available: false,

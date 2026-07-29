@@ -518,6 +518,34 @@ describe("rex stocktake without WMS credentials", () => {
     process.exitCode = 0;
   });
 
+  it("reports missing_user_id when a WMS session has no user to attribute to", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    const sessionFile = activeSessionPath();
+    const session = JSON.parse(readFileSync(sessionFile, "utf8"));
+    delete session.userId;
+    writeFileSync(sessionFile, JSON.stringify(session));
+
+    const review = await runCli(["stocktake", "review"], retailExpressFixture);
+    expect(JSON.parse(review.out).submit).toMatchObject({
+      available: false,
+      reason: "missing_user_id",
+    });
+  });
+
+  it("reports missing_wms_identity when a WMS session never recorded a fingerprint", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    const sessionFile = activeSessionPath();
+    const session = JSON.parse(readFileSync(sessionFile, "utf8"));
+    delete session.wmsFingerprint;
+    writeFileSync(sessionFile, JSON.stringify(session));
+
+    const review = await runCli(["stocktake", "review"], retailExpressFixture);
+    expect(JSON.parse(review.out).submit).toMatchObject({
+      available: false,
+      reason: "missing_wms_identity",
+    });
+  });
+
   it("treats a session written before local mode existed as a WMS session", async () => {
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
     const sessionFile = activeSessionPath();

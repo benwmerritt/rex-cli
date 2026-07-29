@@ -349,10 +349,13 @@ function withPreservedSession(err: unknown): RexError {
     });
   }
   const existing = isRecord(rexErr.details) ? rexErr.details : {};
-  return new RexError(rexErr.code, rexErr.message, rexErr.exitCode, {
-    cause: rexErr,
-    details: { ...existing, stocktakeSession: { preserved: true } },
-  });
+  const details = { ...existing, stocktakeSession: { preserved: true } };
+  // Mirror `submitFailureError`: rebuild an ApiError as an ApiError so its
+  // status survives, rather than flattening every subclass to the base.
+  if (rexErr instanceof ApiError) {
+    return new ApiError(rexErr.message, rexErr.status, { cause: rexErr, details });
+  }
+  return new RexError(rexErr.code, rexErr.message, rexErr.exitCode, { cause: rexErr, details });
 }
 
 function assertSessionWmsIdentity(session: StocktakeSession, currentFingerprint: string): void {

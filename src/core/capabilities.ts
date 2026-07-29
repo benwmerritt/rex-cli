@@ -86,32 +86,28 @@ export interface StocktakeUserIdStatus extends CredentialStatus {
   invalid?: string;
 }
 
-export function stocktakeUserIdStatus(profile: Profile): StocktakeUserIdStatus {
-  let userId: number | undefined;
-  try {
-    userId = resolveStocktakeUserId(profile);
-  } catch (err) {
-    return {
-      configured: false,
-      missing: ["stocktake_user_id / REX_STOCKTAKE_USER_ID"],
-      invalid: err instanceof Error ? err.message : String(err),
-      source: "Any enabled Retail Express user id — list them with `rex api GET users`.",
-      remedy:
-        profile.source === "env"
-          ? "Export REX_STOCKTAKE_USER_ID=<id>, or pass `rex stocktake begin --user-id <id>`."
-          : `rex config wms ${profile.name} --stocktake-user-id <id>`,
-    };
-  }
-  if (userId !== undefined) return { configured: true, missing: [], userId };
+function unconfiguredUserId(profile: Profile, invalid?: string): StocktakeUserIdStatus {
   return {
     configured: false,
     missing: ["stocktake_user_id / REX_STOCKTAKE_USER_ID"],
+    ...(invalid === undefined ? {} : { invalid }),
     source: "Any enabled Retail Express user id — list them with `rex api GET users`.",
     remedy:
       profile.source === "env"
         ? "Export REX_STOCKTAKE_USER_ID=<id>, or pass `rex stocktake begin --user-id <id>`."
         : `rex config wms ${profile.name} --stocktake-user-id <id>`,
   };
+}
+
+export function stocktakeUserIdStatus(profile: Profile): StocktakeUserIdStatus {
+  let userId: number | undefined;
+  try {
+    userId = resolveStocktakeUserId(profile);
+  } catch (err) {
+    return unconfiguredUserId(profile, err instanceof Error ? err.message : String(err));
+  }
+  if (userId !== undefined) return { configured: true, missing: [], userId };
+  return unconfiguredUserId(profile);
 }
 
 export type CapabilityState = "available" | "blocked";

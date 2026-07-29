@@ -137,10 +137,12 @@ Nothing in `rex` can derive them. Check what the active profile can do with:
 rex doctor
 ```
 
-Counting does not need them. Without WMS, `rex stocktake begin --local` counts
-against live stock on hand, computes variances, and `rex stocktake export`
-produces a worksheet to enter by hand in the Retail Express UI. Only the final
-submit is gated.
+The normal flow — plain `rex stocktake begin` through `rex stocktake submit` —
+needs all three: the API key, the WMS credentials, and a stocktake user id.
+Counting does not. With only the API key, `rex stocktake begin --local` counts
+against live stock on hand and computes variances; `review`, `export`, and
+`--dry-run submit` all work from there, producing a worksheet to enter by hand
+in the Retail Express UI.
 
 ### Handling timeouts and network failures
 
