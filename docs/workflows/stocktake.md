@@ -49,9 +49,10 @@ Profile names may contain letters, numbers, dot, underscore, and hyphen. Valid
 examples: `north-store`, `north_store`. Invalid examples: `north store`,
 `tenant/one`; these are rejected with `Unsafe profile name for filesystem path`.
 
-Store the WMS details on the existing profile. Every flag falls back to its
-`REX_WMS_*` environment variable, which is the safer route — a password passed
-as a flag is visible to `ps` and recorded in shell history:
+Store the WMS details on the existing profile. The four credential flags each
+fall back to their `REX_WMS_*` environment variable, which is the safer route —
+a password passed as a flag is visible to `ps` and recorded in shell history.
+`--stocktake-user-id` has no such fallback and must be passed as a flag:
 
 ```bash
 read -rsp 'client id: ' REX_WMS_CLIENT_ID; echo

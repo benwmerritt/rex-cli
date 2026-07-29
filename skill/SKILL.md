@@ -70,7 +70,8 @@ Setup is the human's job, not yours — a password passed as a flag is visible i
 them back:
 
 ```bash
-# the human runs this once, privately; every flag also reads its REX_WMS_* env var
+# the human runs this once, privately, with REX_WMS_* exported for the four
+# credential flags; --stocktake-user-id has no env fallback here
 rex config wms <profile> --stocktake-user-id <rex-user-id>
 ```
 

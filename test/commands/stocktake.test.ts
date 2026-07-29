@@ -579,6 +579,47 @@ describe("rex stocktake without WMS credentials", () => {
     });
   });
 
+  it("refuses a live submit after the credentials were removed, and keeps the session", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, undefined, NO_WMS_ENV);
+
+    expect(submitted.out).toBe("");
+    expect(JSON.parse(submitted.err).error).toMatchObject({
+      code: "validation",
+      details: { stocktakeSession: { preserved: true } },
+    });
+
+    process.exitCode = 0;
+    const review = await runCli(["stocktake", "review"], retailExpressFixture, undefined, NO_WMS_ENV);
+    expect(JSON.parse(review.out)).toMatchObject({ totalLines: 1 });
+  });
+
+  it("refuses a live submit after the credentials rotated, and keeps the session", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+
+    const rotated = {
+      REX_API_KEY: "K",
+      REX_PROFILE: "test",
+      REX_STOCKTAKE_USER_ID: "4",
+      ...WMS_ENV,
+      REX_WMS_CLIENT_ID: "client-b",
+    };
+    const submitted = await runCli(["stocktake", "submit"], retailExpressFixture, undefined, rotated);
+
+    expect(JSON.parse(submitted.err).error).toMatchObject({
+      code: "validation",
+      message: "Stocktake WMS credentials changed since this session began.",
+      details: { stocktakeSession: { preserved: true } },
+    });
+
+    process.exitCode = 0;
+    const review = await runCli(["stocktake", "review"], retailExpressFixture, undefined, rotated);
+    expect(JSON.parse(review.out)).toMatchObject({ totalLines: 1 });
+  });
+
   it("does not claim submit is available on count or remove after the credentials were removed", async () => {
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
 

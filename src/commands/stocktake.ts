@@ -110,7 +110,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
           ok: true,
           mode: sessionMode(session),
           worksheet: buildWorksheet(session),
-          hint: "Apply each adjustment in the Retail Express UI, then run `rex stocktake abort` to clear the local session.",
+          hint: "Apply each adjustment in the Retail Express UI, then run `rex stocktake abort` to clear the stocktake session.",
         });
       }),
     );
@@ -238,7 +238,13 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
             },
           });
         }
-        assertSessionWmsIdentity(session, wmsConfigFingerprint(requireWmsConfig(profile)));
+        // Both of these refuse before anything is sent, so the session survives
+        // — say so, like every other pre-submit refusal does.
+        try {
+          assertSessionWmsIdentity(session, wmsConfigFingerprint(requireWmsConfig(profile)));
+        } catch (err) {
+          throw withPreservedSession(err);
+        }
         const submitPayload = { ...payload, userId };
 
         if (submitLines.length === 0) {
@@ -325,6 +331,21 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         });
       }),
     );
+}
+
+/**
+ * Re-raise a pre-submit refusal with the session-preservation marker attached,
+ * so an agent reading `details.stocktakeSession` gets the same answer whichever
+ * check refused.
+ */
+function withPreservedSession(err: unknown): RexError {
+  const rexErr = err instanceof RexError ? err : undefined;
+  if (!rexErr) return new RexError("generic", errorMessage(err), EXIT.GENERIC, { cause: err });
+  const existing = isRecord(rexErr.details) ? rexErr.details : {};
+  return new RexError(rexErr.code, rexErr.message, rexErr.exitCode, {
+    cause: rexErr,
+    details: { ...existing, stocktakeSession: { preserved: true } },
+  });
 }
 
 function assertSessionWmsIdentity(session: StocktakeSession, currentFingerprint: string): void {

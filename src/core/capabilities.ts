@@ -80,9 +80,13 @@ export function wmsCredentialStatus(profile: Profile): CredentialStatus {
  * something is misconfigured. A bad value is reported as unconfigured, with the
  * parse error attached.
  */
-export function stocktakeUserIdStatus(
-  profile: Profile,
-): CredentialStatus & { userId?: number; invalid?: string } {
+export interface StocktakeUserIdStatus extends CredentialStatus {
+  userId?: number;
+  /** Parse error when a value is present but unusable. */
+  invalid?: string;
+}
+
+export function stocktakeUserIdStatus(profile: Profile): StocktakeUserIdStatus {
   let userId: number | undefined;
   try {
     userId = resolveStocktakeUserId(profile);
@@ -126,7 +130,7 @@ export interface CapabilityReport {
   credentials: {
     restApi: CredentialStatus & { note: string };
     wmsSoap: CredentialStatus;
-    stocktakeUserId: CredentialStatus & { userId?: number };
+    stocktakeUserId: StocktakeUserIdStatus;
   };
   capabilities: Record<string, Capability>;
   blocked: string[];
