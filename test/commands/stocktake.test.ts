@@ -469,6 +469,17 @@ describe("rex stocktake without WMS credentials", () => {
     expect(preview.err).toBe("");
   });
 
+  it("is not blocked by a malformed user id, which a local session never uses", async () => {
+    const started = await runCli(["stocktake", "begin", "--outlet", "3", "--local"], retailExpressFixture, undefined, {
+      REX_API_KEY: "K",
+      REX_PROFILE: "test",
+      REX_STOCKTAKE_USER_ID: "-1",
+    });
+
+    expect(started.err).toBe("");
+    expect(JSON.parse(started.out)).toMatchObject({ ok: true, session: { mode: "local" } });
+  });
+
   it("keeps zero-variance lines out of the worksheet adjustments", async () => {
     await runCli(["stocktake", "begin", "--outlet", "3", "--local"], retailExpressFixture, undefined, NO_WMS_ENV);
     await runCli(["stocktake", "count", "124001", "8"], retailExpressFixture, undefined, NO_WMS_ENV);

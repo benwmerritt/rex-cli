@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { type ContextDeps, run } from "../cli/context";
 import { appendAudit } from "../core/audit";
-import { stocktakeUserIdStatus, wmsCredentialStatus } from "../core/capabilities";
+import { type CredentialStatus, stocktakeUserIdStatus, wmsCredentialStatus } from "../core/capabilities";
 import { type Profile, resolveStocktakeUserId } from "../core/config";
 import { ApiError, EXIT, RexError, ValidationError } from "../core/errors";
 import { parsePositiveInt } from "../core/validation";
@@ -34,7 +34,7 @@ const MAX_ERROR_CAUSE_DEPTH = 4;
  * so `submit.available` reflects the credentials in force right now, not the
  * ones that happened to be set when the session began.
  */
-function credentialView(profile: Profile): SummarizeOptions {
+function credentialView(profile: Profile): SummarizeOptions & { wmsStatus: CredentialStatus } {
   const wmsStatus = wmsCredentialStatus(profile);
   return {
     wmsStatus,
@@ -70,7 +70,9 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         const wmsConfig = local ? undefined : requireWmsConfig(profile);
 
         const explicitUserId = opts.userId === undefined ? undefined : parsePositiveInt(opts.userId, "--user-id");
-        const userId = explicitUserId ?? resolveStocktakeUserId(profile);
+        // A local session attributes nothing, so it must not be blocked by a
+        // malformed configured user id — resolving one throws on bad values.
+        const userId = local ? explicitUserId : (explicitUserId ?? resolveStocktakeUserId(profile));
         if (!local && !userId) {
           const status = stocktakeUserIdStatus(profile);
           throw new ValidationError("Stocktake user id is required to submit to Retail Express.", {
@@ -184,7 +186,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         const storageKey = sessionStorageKey(profile);
         const session = loadSession(storageKey);
         const view = credentialView(profile);
-        const wmsStatus = view.wmsStatus ?? wmsCredentialStatus(profile);
+        const wmsStatus = view.wmsStatus;
         const submitLines = session.lines.filter((line) => line.variance !== 0);
         const payload = {
           outletId: session.outletId,
@@ -340,7 +342,12 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
  */
 function withPreservedSession(err: unknown): RexError {
   const rexErr = err instanceof RexError ? err : undefined;
-  if (!rexErr) return new RexError("generic", errorMessage(err), EXIT.GENERIC, { cause: err });
+  if (!rexErr) {
+    return new RexError("generic", errorMessage(err), EXIT.GENERIC, {
+      cause: err,
+      details: { stocktakeSession: { preserved: true } },
+    });
+  }
   const existing = isRecord(rexErr.details) ? rexErr.details : {};
   return new RexError(rexErr.code, rexErr.message, rexErr.exitCode, {
     cause: rexErr,

@@ -48,9 +48,12 @@ absolute count; `rex` calculates the variance to submit to WMS.
 
 ```bash
 # 0. confirm the profile can actually submit before the count starts.
-#    -e exits non-zero when submit is blocked, so this fails closed.
-rex doctor | jq -e '.capabilities["stocktake.submit"].status == "available"' \
-  || echo "blocked — see .blockedBy, and offer `begin --local` instead"
+#    Stop here if it cannot: offer `begin --local` rather than counting into a
+#    session that can never be posted.
+if ! rex doctor | jq -e '.capabilities["stocktake.submit"].status == "available"' >/dev/null; then
+  rex doctor | jq '.capabilities["stocktake.submit"].blockedBy'
+  exit 1
+fi
 
 # 1. start the day's session once for the outlet
 rex stocktake begin --outlet "Example Outlet"
