@@ -47,8 +47,16 @@ selecting the same outlet and product screen repeatedly. The operator gives an
 absolute count; `rex` calculates the variance to submit to WMS.
 
 ```bash
+# 0. confirm the profile can actually submit before the count starts.
+#    Stop here if it cannot: offer `begin --local` rather than counting into a
+#    session that can never be posted.
+if ! rex doctor | jq -e '.capabilities["stocktake.submit"].status == "available"' >/dev/null; then
+  rex doctor | jq '.capabilities["stocktake.submit"].blockedBy'
+  exit 1
+fi
+
 # 1. start the day's session once for the outlet
-rex stocktake begin --outlet "Mile End"
+rex stocktake begin --outlet "Example Outlet"
 
 # 2. count products as the operator says them
 rex stocktake count weber q 2200 6
@@ -77,6 +85,26 @@ Safety:
 - If `rex stocktake submit` times out, check WMS for an existing
   awaiting-authorisation stocktake before retrying; the request may have reached
   the server.
+
+## Stocktake without WMS credentials
+
+The plain `stocktake begin` and `stocktake submit` need the REST API key, the
+WMS SOAP credentials, and a stocktake user id. Everything else — `begin
+--local`, `count`, `review`, `export`, and `--dry-run submit` — needs only the
+REST key. So when WMS is missing, count anyway and hand back a worksheet: the
+physical count is the expensive part, and it is not wasted.
+
+```bash
+rex stocktake begin --outlet "Example Outlet" --local
+rex stocktake count 124001 6
+rex stocktake export | jq '.worksheet.adjustments'
+rex stocktake abort            # once the operator has entered them by hand
+```
+
+Report the blocker in the operator's terms: which credentials are missing (from
+`details.missing`), that they come from Retail Express support, and that the
+Web Services Interface licence must be enabled. Do not ask them to send the
+credentials to you.
 
 ## Find then act by id
 

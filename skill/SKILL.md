@@ -39,17 +39,43 @@ rex product list --all > products.ndjson      # every page, NDJSON stream
 rex inventory list --filter product_id=124001  # SOH/available per outlet
 ```
 
+## Two credential sets
+
+The REST API key covers everything in the catalogue. Stocktake **submission**
+additionally needs a WMS SOAP account (client GUID, username, password, service
+URL) plus a Retail Express user id. WMS credentials come from Retail Express
+support — they cannot be derived from the API key, looked up through the REST
+API, or guessed. Check before promising a workflow:
+
+```bash
+rex doctor    # {credentials:{...}, capabilities:{...}, blocked:[...], nextSteps:[...]}
+```
+
+If `rex doctor` reports `stocktake.submit` blocked, say so plainly, name the
+missing fields from `blockedBy`, and offer the local path below rather than
+starting a count that cannot be posted. Never ask the human to paste WMS
+credentials into a chat, issue, or commit — they configure them privately with
+`rex config wms <profile>`.
+
 ## Agent stocktake workflow
 
 Use when the human is physically counting products and wants the agent to enter
 counts. Set the outlet once, then treat the last token of each `count` command
-as the absolute counted quantity. Before starting, WMS credentials must be
-configured on the active profile with `rex config wms <profile>`.
+as the absolute counted quantity.
 Profile names may contain only letters, numbers, dot, underscore, and hyphen.
 Invalid characters cause `Unsafe profile name for filesystem path` errors.
 
+Setup is the human's job, not yours — a password passed as a flag is visible in
+`ps` and shell history, so have them export the values instead and never echo
+them back:
+
 ```bash
-rex config wms <profile> --client-id <guid> --username <name> --password <password> --url <url>
+# the human runs this once, privately, with REX_WMS_* exported for the four
+# credential flags; --stocktake-user-id has no env fallback here
+rex config wms <profile> --stocktake-user-id <rex-user-id>
+```
+
+```bash
 rex stocktake begin --outlet "Example Outlet"   # user id can come from config
 rex stocktake count weber q 2200 6              # "we have six"
 rex stocktake count 124001 3                    # exact product id is safest
@@ -57,6 +83,23 @@ rex stocktake review
 rex --dry-run stocktake submit                  # preview WMS variance payload
 rex stocktake submit                            # creates Awaiting Authorisation stocktake
 ```
+
+### When WMS is not configured
+
+`begin` fails with `details.missing`, `details.source`, and
+`details.stillAvailable`. Read those and offer the degraded path — the count is
+still worth doing, only the posting is blocked:
+
+```bash
+rex stocktake begin --outlet "Example Outlet" --local
+rex stocktake count 124001 6
+rex --dry-run stocktake submit    # variances still computed
+rex stocktake export              # {worksheet:{adjustments,alreadyMatching,totals}}
+```
+
+Hand the operator `worksheet.adjustments` to enter in the Retail Express UI,
+then `rex stocktake abort`. A local session can never be submitted, even after
+credentials arrive — begin a fresh session for that.
 
 `count` calculates variance from current outlet stock and updates an existing
 line if the same product is counted again. Do not create direct stock

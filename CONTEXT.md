@@ -82,3 +82,23 @@ The local per-profile SQLite snapshot of Orders + lines that `rex sales`
 reports read. It is a copy, not the source of truth; every report carries its
 sync watermark. Freshness is the caller's responsibility.
 _Avoid_: database (as if authoritative), sync (as a noun for the store).
+
+**WMS**:
+The legacy Retail Express SOAP web service, reached with its own credential set
+(client GUID, username, password, service URL) and gated behind the Web Services
+Interface licence. Sourced from Retail Express support; never derivable from the
+API key. Its only use here is creating a Stocktake, which REST does not expose.
+_Avoid_: "the API" (unqualified), warehouse system.
+
+**Capability**:
+Something `rex` can do given the credentials on the active Profile — reported by
+`rex doctor` as `available` or `blocked`, with the fields that would unblock it.
+A missing credential is a fact about the Profile, not a defect.
+_Avoid_: permission, feature flag, scope.
+
+**Local stocktake session**:
+A Stocktake session opened with `--local`, without WMS. It runs under the active
+Profile against that tenant's live stock, and counts, computes variances, and
+exports a manual-entry worksheet. It is never submittable: it records no WMS
+identity, and one cannot be attached afterwards.
+_Avoid_: offline mode, draft, dry run (which is a preview of a real submit).

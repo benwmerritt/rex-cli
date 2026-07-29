@@ -39,7 +39,7 @@ rex product get 124001
 rex product list --all > products.ndjson      # all pages, one JSON object per line
 rex inventory list --filter product_id=124001
 rex order list --include items,payments
-rex stocktake begin --outlet "Mile End" --user-id 4
+rex stocktake begin --outlet "Example Outlet" --user-id 4
 rex stocktake count weber q 2200 6
 rex stocktake review
 rex --dry-run stocktake submit
@@ -128,6 +128,22 @@ method. The CLI accepts absolute counted quantities, calculates the outlet
 variance from current inventory, then submits a stocktake in Retail Express
 awaiting manual authorisation.
 
+**WMS is a second credential set, not the REST API key.** The client GUID,
+username, password, and service URL come from Retail Express support or your
+account admin, and the account needs the Web Services Interface licence enabled.
+Nothing in `rex` can derive them. Check what the active profile can do with:
+
+```bash
+rex doctor
+```
+
+The normal flow — plain `rex stocktake begin` through `rex stocktake submit` —
+needs all three: the API key, the WMS credentials, and a stocktake user id.
+Counting does not. With only the API key, `rex stocktake begin --local` counts
+against live stock on hand and computes variances; `review`, `export`, and
+`--dry-run submit` all work from there, producing a worksheet to enter by hand
+in the Retail Express UI.
+
 ### Handling timeouts and network failures
 
 Timeouts or network failures during `rex stocktake submit` do not guarantee WMS
@@ -147,7 +163,8 @@ rex config wms default --stocktake-user-id <retail-express-user-id>
 ```
 
 The same values can be passed as flags when appropriate. Flags override
-environment variables when both are present:
+environment variables when both are present — but a password in argv is visible
+to `ps` and lands in shell history, so prefer the environment form above:
 
 ```bash
 rex config wms default \
@@ -183,6 +200,25 @@ credentials before using stocktake again.
 non-zero variances are submitted; zero-variance lines are kept in the review but
 skipped on submit. The WMS account must have the Retail Express Web Services
 Interface enabled.
+
+### Counting without WMS
+
+When the WMS credentials aren't available, `begin` fails with the exact fields
+missing, where they come from, and what still works. Pass `--local` to count
+anyway:
+
+```bash
+rex stocktake begin --outlet "Example Outlet" --local
+rex stocktake count 124001 6
+rex stocktake review                 # submit.available: false, with the reason
+rex --dry-run stocktake submit       # variance preview still works
+rex stocktake export                 # worksheet for manual entry
+rex stocktake abort                  # once the adjustments are entered by hand
+```
+
+A local session never submits, even if WMS credentials appear later — its counts
+were never bound to a WMS identity, so it cannot vouch for which tenant they
+belong to. Configure WMS and begin a fresh session to submit.
 
 ## Configuration
 
