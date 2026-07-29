@@ -547,6 +547,38 @@ describe("rex stocktake without WMS credentials", () => {
     });
   });
 
+  it("marks submit unavailable on review when the credentials rotated mid-count", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+
+    const review = await runCli(["stocktake", "review"], retailExpressFixture, undefined, {
+      REX_API_KEY: "K",
+      REX_PROFILE: "test",
+      REX_STOCKTAKE_USER_ID: "4",
+      ...WMS_ENV,
+      REX_WMS_CLIENT_ID: "client-b",
+    });
+
+    expect(JSON.parse(review.out).submit).toMatchObject({
+      available: false,
+      reason: "wms_credentials_changed",
+    });
+  });
+
+  it("previews a dry run after the credentials were removed mid-count", async () => {
+    await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
+    await runCli(["stocktake", "count", "124001", "6"], retailExpressFixture);
+
+    const preview = await runCli(["--dry-run", "stocktake", "submit"], retailExpressFixture, undefined, NO_WMS_ENV);
+
+    expect(preview.err).toBe("");
+    expect(JSON.parse(preview.out)).toMatchObject({
+      dryRun: true,
+      submitLines: 1,
+      payload: { outletId: 3, items: [{ productId: 124001, variance: -2 }] },
+      session: { submit: { available: false, reason: "wms_not_configured" } },
+    });
+  });
+
   it("does not claim submit is available on count or remove after the credentials were removed", async () => {
     await runCli(["stocktake", "begin", "--outlet", "3"], retailExpressFixture);
 

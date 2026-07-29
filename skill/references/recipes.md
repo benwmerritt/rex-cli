@@ -83,9 +83,11 @@ Safety:
 
 ## Stocktake without WMS credentials
 
-`stocktake.submit` is the only capability that needs the WMS SOAP account. When
-it is missing, count anyway and hand back a worksheet — the physical count is
-the expensive part, and it is not wasted.
+The plain `stocktake begin` and `stocktake submit` need the REST API key, the
+WMS SOAP credentials, and a stocktake user id. Everything else — `begin
+--local`, `count`, `review`, `export`, and `--dry-run submit` — needs only the
+REST key. So when WMS is missing, count anyway and hand back a worksheet: the
+physical count is the expensive part, and it is not wasted.
 
 ```bash
 rex stocktake begin --outlet "Example Outlet" --local

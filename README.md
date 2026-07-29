@@ -161,7 +161,8 @@ rex config wms default --stocktake-user-id <retail-express-user-id>
 ```
 
 The same values can be passed as flags when appropriate. Flags override
-environment variables when both are present:
+environment variables when both are present — but a password in argv is visible
+to `ps` and lands in shell history, so prefer the environment form above:
 
 ```bash
 rex config wms default \

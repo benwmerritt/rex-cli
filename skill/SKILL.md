@@ -65,8 +65,16 @@ as the absolute counted quantity.
 Profile names may contain only letters, numbers, dot, underscore, and hyphen.
 Invalid characters cause `Unsafe profile name for filesystem path` errors.
 
+Setup is the human's job, not yours — a password passed as a flag is visible in
+`ps` and shell history, so have them export the values instead and never echo
+them back:
+
 ```bash
-rex config wms <profile> --client-id <guid> --username <name> --password <password> --url <url> --stocktake-user-id <rex-user-id>
+# the human runs this once, privately; every flag also reads its REX_WMS_* env var
+rex config wms <profile> --stocktake-user-id <rex-user-id>
+```
+
+```bash
 rex stocktake begin --outlet "Example Outlet"   # user id can come from config
 rex stocktake count weber q 2200 6              # "we have six"
 rex stocktake count 124001 3                    # exact product id is safest

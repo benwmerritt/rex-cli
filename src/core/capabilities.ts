@@ -72,9 +72,32 @@ export function wmsCredentialStatus(profile: Profile): CredentialStatus {
   };
 }
 
-/** Inspect the Retail Express user id used to attribute stocktake submissions. */
-export function stocktakeUserIdStatus(profile: Profile): CredentialStatus & { userId?: number } {
-  const userId = resolveStocktakeUserId(profile);
+/**
+ * Inspect the Retail Express user id used to attribute stocktake submissions.
+ *
+ * `resolveStocktakeUserId` throws on a malformed value, which would take
+ * `rex doctor` down with it — the one command someone runs precisely because
+ * something is misconfigured. A bad value is reported as unconfigured, with the
+ * parse error attached.
+ */
+export function stocktakeUserIdStatus(
+  profile: Profile,
+): CredentialStatus & { userId?: number; invalid?: string } {
+  let userId: number | undefined;
+  try {
+    userId = resolveStocktakeUserId(profile);
+  } catch (err) {
+    return {
+      configured: false,
+      missing: ["stocktake_user_id / REX_STOCKTAKE_USER_ID"],
+      invalid: err instanceof Error ? err.message : String(err),
+      source: "Any enabled Retail Express user id — list them with `rex api GET users`.",
+      remedy:
+        profile.source === "env"
+          ? "Export REX_STOCKTAKE_USER_ID=<id>, or pass `rex stocktake begin --user-id <id>`."
+          : `rex config wms ${profile.name} --stocktake-user-id <id>`,
+    };
+  }
   if (userId !== undefined) return { configured: true, missing: [], userId };
   return {
     configured: false,

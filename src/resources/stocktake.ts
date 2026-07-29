@@ -209,6 +209,8 @@ export function removeLine(
 export interface SummarizeOptions {
   /** WMS credential state, so the summary can say whether `submit` will work. */
   wmsStatus?: CredentialStatus;
+  /** Fingerprint of the credentials in force now, to detect a mid-count swap. */
+  wmsFingerprint?: string;
 }
 
 /**
@@ -219,6 +221,7 @@ export interface SummarizeOptions {
 function submitAvailability(
   session: StocktakeSession,
   wmsStatus: CredentialStatus | undefined,
+  currentFingerprint: string | undefined,
 ): Record<string, unknown> {
   if (sessionMode(session) === "local") {
     return {
@@ -252,6 +255,15 @@ function submitAvailability(
       hint: "Begin a new session with `--user-id <id>` or configure `stocktake_user_id`.",
     };
   }
+  // Credentials rotated mid-count: submit would refuse, so the summary must not
+  // promise otherwise.
+  if (currentFingerprint !== undefined && session.wmsFingerprint !== currentFingerprint) {
+    return {
+      available: false,
+      reason: "wms_credentials_changed",
+      hint: "Run `rex stocktake abort` and start a new stocktake with the current WMS credentials.",
+    };
+  }
   return { available: true };
 }
 
@@ -264,7 +276,7 @@ export function summarizeSession(
     id: session.id,
     profile: session.profile,
     mode: sessionMode(session),
-    submit: submitAvailability(session, options.wmsStatus),
+    submit: submitAvailability(session, options.wmsStatus, options.wmsFingerprint),
     outletId: session.outletId,
     outletName: session.outletName,
     userId: session.userId,

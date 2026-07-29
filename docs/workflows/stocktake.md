@@ -49,16 +49,22 @@ Profile names may contain letters, numbers, dot, underscore, and hyphen. Valid
 examples: `north-store`, `north_store`. Invalid examples: `north store`,
 `tenant/one`; these are rejected with `Unsafe profile name for filesystem path`.
 
-Store the WMS details on the existing profile:
+Store the WMS details on the existing profile. Every flag falls back to its
+`REX_WMS_*` environment variable, which is the safer route — a password passed
+as a flag is visible to `ps` and recorded in shell history:
 
 ```bash
-rex config wms default \
-  --client-id <wms-client-guid> \
-  --username <wms-user> \
-  --password <wms-password> \
-  --url <wms-service-url> \
-  --stocktake-user-id <rex-user-id>
+read -rsp 'client id: ' REX_WMS_CLIENT_ID; echo
+read -rsp 'username:  ' REX_WMS_USERNAME;  echo
+read -rsp 'password:  ' REX_WMS_PASSWORD;  echo
+read -rsp 'wms url:   ' REX_WMS_URL;       echo
+export REX_WMS_CLIENT_ID REX_WMS_USERNAME REX_WMS_PASSWORD REX_WMS_URL
+
+rex config wms default --stocktake-user-id <rex-user-id>
+unset REX_WMS_CLIENT_ID REX_WMS_USERNAME REX_WMS_PASSWORD REX_WMS_URL
 ```
+
+The values are then stored in `~/.config/rex/config.toml` (mode 0600).
 
 ## Counting Without WMS
 

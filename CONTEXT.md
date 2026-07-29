@@ -97,7 +97,8 @@ A missing credential is a fact about the Profile, not a defect.
 _Avoid_: permission, feature flag, scope.
 
 **Local stocktake session**:
-A Stocktake session opened with `--local`, without WMS. It counts, computes
-variances, and exports a manual-entry worksheet, but is never submittable — it
-records no WMS identity, so it cannot be bound to a tenant after the fact.
+A Stocktake session opened with `--local`, without WMS. It runs under the active
+Profile against that tenant's live stock, and counts, computes variances, and
+exports a manual-entry worksheet. It is never submittable: it records no WMS
+identity, and one cannot be attached afterwards.
 _Avoid_: offline mode, draft, dry run (which is a preview of a real submit).

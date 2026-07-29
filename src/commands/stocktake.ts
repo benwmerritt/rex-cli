@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import { type ContextDeps, run } from "../cli/context";
 import { appendAudit } from "../core/audit";
 import { stocktakeUserIdStatus, wmsCredentialStatus } from "../core/capabilities";
-import { resolveStocktakeUserId } from "../core/config";
+import { type Profile, resolveStocktakeUserId } from "../core/config";
 import { ApiError, EXIT, RexError, ValidationError } from "../core/errors";
 import { parsePositiveInt } from "../core/validation";
 import { requireWmsConfig, STOCKTAKE_WITHOUT_WMS, wmsConfigFingerprint } from "../core/wms";
@@ -24,9 +24,23 @@ import {
   upsertLine,
   type ResolvedProduct,
   type StocktakeSession,
+  type SummarizeOptions,
 } from "../resources/stocktake";
 
 const MAX_ERROR_CAUSE_DEPTH = 4;
+
+/**
+ * The credential view every session summary is built from. Computed per command
+ * so `submit.available` reflects the credentials in force right now, not the
+ * ones that happened to be set when the session began.
+ */
+function credentialView(profile: Profile): SummarizeOptions {
+  const wmsStatus = wmsCredentialStatus(profile);
+  return {
+    wmsStatus,
+    wmsFingerprint: wmsStatus.configured ? wmsConfigFingerprint(requireWmsConfig(profile)) : undefined,
+  };
+}
 
 export function registerStocktake(program: Command, deps: ContextDeps): void {
   const stocktake = program.command("stocktake").alias("st").description("Agent-friendly stocktake counts");
@@ -80,7 +94,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         saveSession(session, storageKey);
         ctx.output.result({
           ok: true,
-          session: summarizeSession(session, { wmsStatus: wmsCredentialStatus(profile) }),
+          session: summarizeSession(session, credentialView(profile)),
         });
       }),
     );
@@ -123,7 +137,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
           ok: true,
           updated: result.updated,
           line: result.line,
-          summary: summarizeSession(result.session, { wmsStatus: wmsCredentialStatus(profile) }),
+          summary: summarizeSession(result.session, credentialView(profile)),
         });
       }),
     );
@@ -136,9 +150,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
       run(deps, (ctx) => {
         const profile = ctx.profile();
         ctx.output.result(
-          summarizeSession(loadSession(sessionStorageKey(profile)), {
-            wmsStatus: wmsCredentialStatus(profile),
-          }),
+          summarizeSession(loadSession(sessionStorageKey(profile)), credentialView(profile)),
         );
       }),
     );
@@ -158,7 +170,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         ctx.output.result({
           ok: true,
           removed: result.line,
-          summary: summarizeSession(result.session, { wmsStatus: wmsCredentialStatus(profile) }),
+          summary: summarizeSession(result.session, credentialView(profile)),
         });
       }),
     );
@@ -171,7 +183,8 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
         const profile = ctx.profile();
         const storageKey = sessionStorageKey(profile);
         const session = loadSession(storageKey);
-        const wmsStatus = wmsCredentialStatus(profile);
+        const view = credentialView(profile);
+        const wmsStatus = view.wmsStatus ?? wmsCredentialStatus(profile);
         const submitLines = session.lines.filter((line) => line.variance !== 0);
         const payload = {
           outletId: session.outletId,
@@ -195,7 +208,7 @@ export function registerStocktake(program: Command, deps: ContextDeps): void {
             submitLines: submitLines.length,
             skippedZeroVariance: session.lines.length - submitLines.length,
             payload,
-            session: summarizeSession(session, { wmsStatus }),
+            session: summarizeSession(session, view),
           });
           return;
         }

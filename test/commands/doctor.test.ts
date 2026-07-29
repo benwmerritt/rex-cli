@@ -102,6 +102,23 @@ describe("rex doctor", () => {
     );
   });
 
+  it("reports a malformed user id instead of crashing on it", async () => {
+    const result = await runCli(["doctor"], {
+      REX_API_KEY: "K",
+      REX_PROFILE: "test",
+      REX_STOCKTAKE_USER_ID: "-1",
+      ...WMS_ENV,
+    });
+
+    expect(result.err).toBe("");
+    const report = JSON.parse(result.out);
+    expect(report.credentials.stocktakeUserId).toMatchObject({
+      configured: false,
+      invalid: "REX_STOCKTAKE_USER_ID must be a positive integer.",
+    });
+    expect(report.blocked).toEqual(["stocktake.submit"]);
+  });
+
   it("fails like any other command when no profile resolves", async () => {
     const result = await runCli(["doctor"], {});
 
