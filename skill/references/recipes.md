@@ -38,50 +38,66 @@ Retail Express prices a Product per Outlet. An Outlet price overrides the master
 price, so two outlets can sell the same product at different prices with nothing
 on the product record to show it. **No Retail Express API can write an outlet
 price** — see [Outlet pricing](../SKILL.md#outlet-pricing). This finds them; a
-human fixes them in Admin.
-
-One product:
+human fixes them in Admin. Start a Bash shell and define this collector once; it
+validates and combines every response page before either audit runs:
 
 ```bash
 set -euo pipefail
 
+collect_productprices() {
+  local output_file="$1"
+  shift
+  : >"$output_file"
+
+  local requested_page=1
+  local body meta returned_page page_size total_records
+
+  while :; do
+    body=$(rex api GET productprices -q "$@" \
+      page_number="$requested_page" page_size=250)
+    jq -e --argjson requested "$requested_page" '
+      .page_number as $page
+      | .page_size as $size
+      | .total_records as $total
+      | (.data | type) == "array"
+        and ([$page, $size, $total] | all(.[]; type == "number"))
+        and all(.data[];
+          .product_id as $product
+          | .outlet_id as $outlet
+          | .sell_price_inc as $price
+          | ([$product, $outlet, $price] | all(.[]; type == "number"))
+            and $product == ($product | floor)
+            and $outlet == ($outlet | floor)
+            and $product > 0
+            and $outlet > 0
+            and $price >= 0)
+        and $page == ($page | floor)
+        and $size == ($size | floor)
+        and $total == ($total | floor)
+        and $page == $requested
+        and $size > 0
+        and $total >= 0
+        and (.data | length) <= $size
+        and ($total == 0 or (.data | length) > 0)
+    ' <<<"$body" >/dev/null
+
+    jq -c '.data[]' <<<"$body" >>"$output_file"
+    meta=$(jq -r \
+      '[.page_number, .page_size, .total_records] | @tsv' <<<"$body")
+    IFS=$'\t' read -r returned_page page_size total_records <<<"$meta"
+    ((returned_page * page_size >= total_records)) && break
+    requested_page=$((returned_page + 1))
+  done
+}
+```
+
+One product, in that same shell:
+
+```bash
+(
 prices_file=$(mktemp)
 trap 'rm -f "$prices_file"' EXIT
-
-p=1
-while :; do
-  body=$(rex api GET productprices -q product_id=124001 \
-    page_number="$p" page_size=250)
-  jq -e --argjson requested "$p" '
-    .page_number as $pn
-    | .page_size as $ps
-    | .total_records as $total
-    | (.data | type) == "array"
-      and ([$pn, $ps, $total] | all(.[]; type == "number"))
-      and all(.data[];
-        .product_id as $product
-        | .outlet_id as $outlet
-        | .sell_price_inc as $price
-        | ([$product, $outlet, $price] | all(.[]; type == "number"))
-          and $product == ($product | floor)
-          and $outlet == ($outlet | floor)
-          and $product > 0
-          and $outlet > 0
-          and $price >= 0)
-      and $pn == ($pn | floor)
-      and $ps == ($ps | floor)
-      and $total == ($total | floor)
-      and $pn == $requested
-      and $ps > 0
-      and $total >= 0
-  ' <<<"$body" >/dev/null
-
-  jq -c '.data[]' <<<"$body" >>"$prices_file"
-  meta=$(jq -r '[.page_number, .page_size, .total_records] | @tsv' <<<"$body")
-  IFS=$'\t' read -r pn ps total <<<"$meta"
-  ((pn * ps >= total)) && break
-  p=$((pn + 1))
-done
+collect_productprices "$prices_file" product_id=124001
 
 jq -s 'map(select((.sell_price_inc | type) == "number"
                   and .sell_price_inc > 0)) as $rows
@@ -106,50 +122,17 @@ jq -s 'map(select((.sell_price_inc | type) == "number"
                                    * 100 | round / 100)}]}
              end
          end' "$prices_file"
+)
 ```
 
 Whole catalogue. `rex api` is a raw passthrough and does not paginate for you, so
-page explicitly — the parameter is `page_number`, not `page`:
+reuse the collector in the same shell:
 
 ```bash
-set -euo pipefail
-
+(
 prices_file=$(mktemp)
 trap 'rm -f "$prices_file"' EXIT
-
-p=1
-while :; do
-  body=$(rex api GET productprices -q page_number="$p" page_size=250)
-  jq -e --argjson requested "$p" '
-    .page_number as $pn
-    | .page_size as $ps
-    | .total_records as $total
-    | (.data | type) == "array"
-      and ([$pn, $ps, $total] | all(.[]; type == "number"))
-      and all(.data[];
-        .product_id as $product
-        | .outlet_id as $outlet
-        | .sell_price_inc as $price
-        | ([$product, $outlet, $price] | all(.[]; type == "number"))
-          and $product == ($product | floor)
-          and $outlet == ($outlet | floor)
-          and $product > 0
-          and $outlet > 0
-          and $price >= 0)
-      and $pn == ($pn | floor)
-      and $ps == ($ps | floor)
-      and $total == ($total | floor)
-      and $pn == $requested
-      and $ps > 0
-      and $total >= 0
-  ' <<<"$body" >/dev/null
-
-  jq -c '.data[]' <<<"$body" >>"$prices_file"
-  meta=$(jq -r '[.page_number, .page_size, .total_records] | @tsv' <<<"$body")
-  IFS=$'\t' read -r pn ps total <<<"$meta"
-  ((pn * ps >= total)) && break
-  p=$((pn + 1))
-done
+collect_productprices "$prices_file"
 
 jq -s 'map(select((.sell_price_inc | type) == "number"
                   and .sell_price_inc > 0))
@@ -176,6 +159,7 @@ jq -s 'map(select((.sell_price_inc | type) == "number"
                end)
        | map(select(.status == "ambiguous"
                     or (.outliers | length) > 0))' "$prices_file"
+)
 ```
 
 A price held by more than half the priced outlets is the consensus; the rest are
