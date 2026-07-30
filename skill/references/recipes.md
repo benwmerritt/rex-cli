@@ -51,7 +51,8 @@ collect_productprices() {
   : >"$output_file"
 
   local requested_page=1
-  local body meta returned_page page_size total_records
+  local body meta returned_page page_size total_records page_records
+  local expected_page_size="" expected_total_records="" received_records=0
 
   while :; do
     body=$(rex api GET productprices -q "$@" \
@@ -80,14 +81,35 @@ collect_productprices() {
         and $total >= 0
         and (.data | length) <= $size
         and (.data | length) <= $total
+        and ($page * $size >= $total or (.data | length) == $size)
         and ($total == 0 or (.data | length) > 0)
     ' <<<"$body" >/dev/null
 
-    jq -c '.data[]' <<<"$body" >>"$output_file"
     meta=$(jq -r \
-      '[.page_number, .page_size, .total_records] | @tsv' <<<"$body")
-    IFS=$'\t' read -r returned_page page_size total_records <<<"$meta"
-    ((returned_page * page_size >= total_records)) && break
+      '[.page_number, .page_size, .total_records, (.data | length)] | @tsv' \
+      <<<"$body")
+    IFS=$'\t' read -r \
+      returned_page page_size total_records page_records <<<"$meta"
+
+    if [[ -z "$expected_page_size" ]]; then
+      expected_page_size=$page_size
+      expected_total_records=$total_records
+    elif [[ $page_size != "$expected_page_size"
+            || $total_records != "$expected_total_records" ]]; then
+      printf 'productprices pagination metadata changed between pages\n' >&2
+      return 1
+    fi
+
+    jq -c '.data[]' <<<"$body" >>"$output_file"
+    received_records=$((received_records + page_records))
+    if ((returned_page * page_size >= total_records)); then
+      if ((received_records != total_records)); then
+        printf 'productprices pagination returned %d of %d records\n' \
+          "$received_records" "$total_records" >&2
+        return 1
+      fi
+      break
+    fi
     requested_page=$((returned_page + 1))
   done
 }
@@ -198,9 +220,10 @@ jq -r 'select(.sell_price_inc > 0)
 In the single-product result, zero positive-priced outlets returns
 `no_priced_outlets`; one returns `not_comparable`. The whole-catalogue report
 intentionally omits products with fewer than two positive-priced outlets, so
-those two statuses do not appear there. The catalogue pipeline sorts on disk and
-emits one JSON object per finding, keeping only one product's outlet rows in
-memory at a time.
+those two statuses do not appear there. The collector rejects truncated pages or
+metadata changes instead of silently producing an incomplete audit. The
+catalogue pipeline sorts on disk and emits one JSON object per finding, keeping
+only one product's outlet rows in memory at a time.
 
 With at least two priced outlets, a price held by more than half of them is the
 consensus and the rest are outliers. If there is no strict majority, the result
