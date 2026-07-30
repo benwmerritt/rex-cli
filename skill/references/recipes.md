@@ -158,8 +158,9 @@ jq -s 'map(select((.sell_price_inc | type) == "number"
                              | select(.sell_price_inc != $consensus)
                              | {outlet_id, price: .sell_price_inc,
                                 price_difference:
-                                  ((.sell_price_inc - $consensus)
-                                   * 100 | round / 100)}]}
+                                  (((.sell_price_inc * 100 | round)
+                                    - ($consensus * 100 | round))
+                                   / 100)}]}
              end
          end' "$prices_file"
 )
@@ -198,8 +199,9 @@ jq -r 'select(.sell_price_inc > 0)
                             | select(.price != $consensus)
                             | {outlet_id, price,
                                price_difference:
-                                 ((.price - $consensus)
-                                  * 100 | round / 100)}]}
+                                 (((.price * 100 | round)
+                                   - ($consensus * 100 | round))
+                                  / 100)}]}
             end
         end;
 
@@ -243,8 +245,8 @@ priced at that outlet" — including them buries the real findings under every
 unstocked line. Report clear outliers in both directions as potential findings
 pending human confirmation: above consensus may be an overcharge; below may be
 lost margin. `price_difference` is the signed outlet-price-minus-consensus
-difference in currency units, rounded to two decimal places; it is not a
-percentage.
+difference in currency units, calculated by rounding each price to integer cents
+before subtraction; it is not a percentage.
 
 ## Low-stock report (read-only)
 
