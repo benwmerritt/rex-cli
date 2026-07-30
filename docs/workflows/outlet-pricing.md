@@ -15,19 +15,26 @@ outlet, stays there indefinitely and silently.
 
 ## What Cannot Be Done
 
-**No Retail Express API can write an outlet price.** This was verified against
-every interface the vendor publishes:
+As last verified on **2026-07-30**, the documented Retail Express interfaces
+below expose no outlet-price write. This conclusion is scoped to REST v2.1 and
+the linked V2 SOAP specifications available on that date; re-check the vendor
+documentation before relying on it for a later API version.
 
 | Interface | Outlet price write |
 | --- | --- |
-| REST v2.1 `productprices` | No — GET only; POST and PUT return 404 |
-| Legacy SOAP: Warehouse Management | No — on-demand methods cover stocktake, dispatch, fulfilment, receiving |
-| Legacy SOAP: Webstore | No — product and pricing methods are all `Get*` |
-| Legacy SOAP: Accounting | No — prices appear only as read fields |
-| Legacy SOAP: Inventory Planning | No — writes cover ITOs, purchase orders, suppliers |
+| [REST v2.1](https://developer.retailexpress.com.au/getting-started) [`productprices`](https://developer.retailexpress.com.au/api-details) | No — the documented operation is GET; live POST and PUT probes returned 404 |
+| Legacy SOAP: [Warehouse Management V2](https://www.retailexpressmedia.com/documentation/api/v2/Retail%20Express%20-%20V2%20Warehouse%20Management%20System%20API.pdf) | No — on-demand methods cover stocktake, dispatch, fulfilment, and receiving |
+| Legacy SOAP: [Webstore V2](https://www.retailexpressmedia.com/documentation/api/v2/Retail%20Express%20-%20V2%20Web%20Store%20API.pdf) | No — product and pricing methods are retrieval operations |
+| Legacy SOAP: [Accounting V2](https://www.retailexpressmedia.com/documentation/api/v2/Retail%20Express%20-%20V2%20Accounting%20API.pdf) | No — prices appear only as read fields |
+| Legacy SOAP: [Inventory Planning V2](https://www.retailexpressmedia.com/documentation/api/v2/Retail%20Express%20-%20V2%20Inventory%20Planning%20System%20API.pdf) | No — writes cover ITOs, purchase orders, and suppliers |
 
-No credential unblocks this, so `rex doctor` has nothing to report about it.
-Correcting an outlet price is a human action in Retail Express Admin.
+The vendor's [legacy API index](https://developer.retailexpress.com.au/legacy-apis)
+identifies those four SOAP interfaces, while its
+[version guidance](https://developer.retailexpress.com.au/getting-started#versions)
+identifies v2.1 as the latest documented REST version at verification time. No
+credential changes the capability of those versions, so `rex doctor` has
+nothing to report about it. Correcting an outlet price is a human action in
+Retail Express Admin.
 
 Writing the product master does **not** fix an outlet override. The override
 persists, the master changes, and a live pricing write has been made for no
@@ -58,11 +65,13 @@ roughly sixty requests and is cheap enough to run on a schedule.
 ## Correct
 
 1. Report the potential finding: product id, outlet id, current price,
-   consensus price, and the delta amount. For an ambiguous divergence, report
-   the competing prices for human investigation instead; do not apply a
-   correction until a human establishes the intended price.
-2. A human changes the price for that outlet in Retail Express Admin. Nothing in
+   consensus price, and the delta amount.
+2. A human confirms the target price. For an ambiguous divergence, or when an
+   intentional outlet price differs from consensus, record the approved target
+   as an exception; do not infer a correction from consensus alone.
+3. If a change is required, a human makes it in Retail Express Admin. Nothing in
    `rex` can do this step.
-3. Re-read `productprices` for the product and confirm the outlet row now
-   matches the consensus. Only call the price fixed when that read-back matches,
-   never merely because someone said they changed it.
+4. Re-read every `productprices` page for the product and compare the outlet row
+   with the human-confirmed target. Only call the price fixed when that read-back
+   matches. If an approved exception intentionally remains different from
+   consensus, report it as verified rather than as an unresolved outlier.

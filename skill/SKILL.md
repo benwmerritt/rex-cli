@@ -139,12 +139,13 @@ Retail Express prices a Product **per Outlet**. Where an outlet price exists it
 reveals the override. Two outlets routinely end up selling the same product at
 different prices with no visible cause.
 
-**No Retail Express API can write an outlet price.** Verified: REST v2.1
-`productprices` is GET-only (POST and PUT both 404), and none of the four legacy
-SOAP APIs — Warehouse Management, Webstore, Accounting, Inventory Planning —
-expose a price write. Correcting one is a human action in Retail Express Admin.
-This is a property of the vendor's API, not a missing credential; `rex doctor`
-will not unblock it.
+As last verified on **2026-07-30**, REST v2.1 `productprices` is GET-only (live
+POST and PUT probes returned 404), and the documented V2 Warehouse Management,
+Webstore, Accounting, and Inventory Planning SOAP interfaces expose no
+outlet-price write. Correcting one is a human action in Retail Express Admin.
+This is a capability of those documented versions, not a missing credential;
+`rex doctor` will not unblock it. Version scope and vendor sources:
+[the outlet-pricing workflow](../docs/workflows/outlet-pricing.md#what-cannot-be-done).
 
 Audit them with the paginated procedure in the recipes reference. It fetches and
 combines every `productprices` page before calculating a result; a raw
@@ -160,8 +161,10 @@ that outlet" and skip it. Full audit recipe, single product and whole catalogue:
 read its per-outlet prices too and report any divergence unprompted — with the
 outlet ids, both prices, and the delta amount. Describe a clear outlier as a
 potential loss of margin or potential overcharge until a human confirms whether
-the difference is intentional. Nobody goes looking for a silent price gap they
-were not told about.
+the difference is intentional and names the target price. Consensus detects a
+potential outlier; it does not authorize a correction. Record an approved
+exception when the confirmed target intentionally differs from consensus.
+Nobody goes looking for a silent price gap they were not told about.
 
 Two things not to do:
 
@@ -170,10 +173,11 @@ Two things not to do:
   override. The outlet keeps its old price, the master silently changes, and you
   have made a live pricing write that fixed nothing.
 - **Never report an outlet price as fixed.** You cannot make that change. Hand
-  back the product id, the outlet id, the current price, and the target price,
-  then rerun the same all-pages `productprices` procedure once the human says
-  they have done it and confirm from the combined response before calling it
-  resolved.
+  back the product id, the outlet id, the current price, and the human-confirmed
+  target price, then rerun the same all-pages `productprices` procedure once the
+  human says they have done it. Compare the combined response with that target,
+  not automatically with consensus, before calling it resolved or verifying an
+  approved exception.
 
 ## Sales stats
 

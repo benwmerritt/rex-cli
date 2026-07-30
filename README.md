@@ -84,10 +84,11 @@ a time, so use the
 [paginated audit recipe](skill/references/recipes.md#outlet-price-divergence-read-only)
 to combine every `productprices` page before comparing outlets.
 
-**No Retail Express API can write an outlet price** — REST `productprices` is
-GET-only, and none of the four legacy SOAP APIs expose a price write. Correcting
-one is a human action in Retail Express Admin; writing the product master does
-not clear the override. Detection, the divergence rule, and the audit recipe:
+As last verified on 2026-07-30, Retail Express REST v2.1 `productprices` is
+GET-only and the documented V2 SOAP interfaces expose no outlet-price write.
+Correcting one is a human action in Retail Express Admin; writing the product
+master does not clear the override. Sources, version scope, detection, and the
+audit recipe:
 [docs/workflows/outlet-pricing.md](docs/workflows/outlet-pricing.md).
 
 ## Sales stats
