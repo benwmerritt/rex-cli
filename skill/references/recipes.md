@@ -36,10 +36,11 @@ can recover the original price.
 
 Retail Express prices a Product per Outlet. An Outlet price overrides the master
 price, so two outlets can sell the same product at different prices with nothing
-on the product record to show it. **No Retail Express API can write an outlet
-price** — see [Outlet pricing](../SKILL.md#outlet-pricing). This finds them; a
-human fixes them in Admin. Start a Bash shell and define this collector once; it
-validates and combines every response page before either audit runs:
+on the product record to show it. This audit flow only reads `productprices`; it
+detects divergences and a human fixes them in Admin. The linked
+[outlet-pricing guidance](../SKILL.md#outlet-pricing) explains the API capability
+boundary. Start a Bash shell and define this collector once; it validates and
+combines every response page before either audit runs:
 
 ```bash
 set -euo pipefail
