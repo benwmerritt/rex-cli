@@ -43,42 +43,147 @@ human fixes them in Admin.
 One product:
 
 ```bash
-rex api GET productprices -q product_id=124001 \
-  | jq '[.data[] | select(.sell_price_inc > 0)] as $rows
-        | ($rows | group_by(.sell_price_inc) | max_by(length) | .[0].sell_price_inc) as $consensus
-        | {consensus: $consensus,
-           outliers: [$rows[] | select(.sell_price_inc != $consensus)
-                      | {outlet_id, price: .sell_price_inc,
-                         delta: ((.sell_price_inc - $consensus) * 100 | round / 100)}]}'
+set -euo pipefail
+
+prices_file=$(mktemp)
+trap 'rm -f "$prices_file"' EXIT
+
+p=1
+while :; do
+  body=$(rex api GET productprices -q product_id=124001 \
+    page_number="$p" page_size=250)
+  jq -e --argjson requested "$p" '
+    .page_number as $pn
+    | .page_size as $ps
+    | .total_records as $total
+    | (.data | type) == "array"
+      and ([$pn, $ps, $total] | all(.[]; type == "number"))
+      and all(.data[];
+        .product_id as $product
+        | .outlet_id as $outlet
+        | .sell_price_inc as $price
+        | ([$product, $outlet, $price] | all(.[]; type == "number"))
+          and $product == ($product | floor)
+          and $outlet == ($outlet | floor)
+          and $product > 0
+          and $outlet > 0
+          and $price >= 0)
+      and $pn == ($pn | floor)
+      and $ps == ($ps | floor)
+      and $total == ($total | floor)
+      and $pn == $requested
+      and $ps > 0
+      and $total >= 0
+  ' <<<"$body" >/dev/null
+
+  jq -c '.data[]' <<<"$body" >>"$prices_file"
+  meta=$(jq -r '[.page_number, .page_size, .total_records] | @tsv' <<<"$body")
+  IFS=$'\t' read -r pn ps total <<<"$meta"
+  ((pn * ps >= total)) && break
+  p=$((pn + 1))
+done
+
+jq -s 'map(select((.sell_price_inc | type) == "number"
+                  and .sell_price_inc > 0)) as $rows
+       | if ($rows | length) == 0 then
+           {status: "no_priced_outlets", consensus: null, outliers: []}
+         else
+           ($rows | length) as $count
+           | ($rows | group_by(.sell_price_inc)) as $groups
+           | ($groups | map(select(length * 2 > $count))) as $majorities
+           | if ($majorities | length) == 0 then
+               {status: "ambiguous", consensus: null,
+                prices: [$groups[] | {price: .[0].sell_price_inc,
+                                      outlet_count: length}]}
+             else
+               ($majorities[0][0].sell_price_inc) as $consensus
+               | {status: "ok", consensus: $consensus,
+                  outliers: [$rows[]
+                             | select(.sell_price_inc != $consensus)
+                             | {outlet_id, price: .sell_price_inc,
+                                delta_amount:
+                                  ((.sell_price_inc - $consensus)
+                                   * 100 | round / 100)}]}
+             end
+         end' "$prices_file"
 ```
 
 Whole catalogue. `rex api` is a raw passthrough and does not paginate for you, so
 page explicitly — the parameter is `page_number`, not `page`:
 
 ```bash
+set -euo pipefail
+
+prices_file=$(mktemp)
+trap 'rm -f "$prices_file"' EXIT
+
 p=1
 while :; do
-  body=$(rex api GET productprices -q page_number=$p page_size=250)
-  echo "$body" | jq -c '.data[]' >> /tmp/prices.ndjson
-  read pn ps tr <<<"$(echo "$body" | jq -r '"\(.page_number) \(.page_size) \(.total_records)"')"
-  [ $((pn * ps)) -ge "$tr" ] && break
-  p=$((p + 1))
+  body=$(rex api GET productprices -q page_number="$p" page_size=250)
+  jq -e --argjson requested "$p" '
+    .page_number as $pn
+    | .page_size as $ps
+    | .total_records as $total
+    | (.data | type) == "array"
+      and ([$pn, $ps, $total] | all(.[]; type == "number"))
+      and all(.data[];
+        .product_id as $product
+        | .outlet_id as $outlet
+        | .sell_price_inc as $price
+        | ([$product, $outlet, $price] | all(.[]; type == "number"))
+          and $product == ($product | floor)
+          and $outlet == ($outlet | floor)
+          and $product > 0
+          and $outlet > 0
+          and $price >= 0)
+      and $pn == ($pn | floor)
+      and $ps == ($ps | floor)
+      and $total == ($total | floor)
+      and $pn == $requested
+      and $ps > 0
+      and $total >= 0
+  ' <<<"$body" >/dev/null
+
+  jq -c '.data[]' <<<"$body" >>"$prices_file"
+  meta=$(jq -r '[.page_number, .page_size, .total_records] | @tsv' <<<"$body")
+  IFS=$'\t' read -r pn ps total <<<"$meta"
+  ((pn * ps >= total)) && break
+  p=$((pn + 1))
 done
 
-jq -s 'map(select(.sell_price_inc > 0))
+jq -s 'map(select((.sell_price_inc | type) == "number"
+                  and .sell_price_inc > 0))
        | group_by(.product_id)
-       | map((group_by(.sell_price_inc) | max_by(length) | .[0].sell_price_inc) as $c
-             | {product_id: .[0].product_id, consensus: $c,
-                outliers: [.[] | select(.sell_price_inc != $c)
-                           | {outlet_id, price: .sell_price_inc,
-                              delta: ((.sell_price_inc - $c) * 100 | round / 100)}]})
-       | map(select(.outliers | length > 0))' /tmp/prices.ndjson
+       | map(. as $rows
+             | ($rows | length) as $count
+             | ($rows | group_by(.sell_price_inc)) as $groups
+             | ($groups | map(select(length * 2 > $count))) as $majorities
+             | if ($majorities | length) == 0 then
+                 {status: "ambiguous", product_id: $rows[0].product_id,
+                  consensus: null,
+                  prices: [$groups[] | {price: .[0].sell_price_inc,
+                                        outlet_count: length}]}
+               else
+                 ($majorities[0][0].sell_price_inc) as $consensus
+                 | {status: "ok", product_id: $rows[0].product_id,
+                    consensus: $consensus,
+                    outliers: [$rows[]
+                               | select(.sell_price_inc != $consensus)
+                               | {outlet_id, price: .sell_price_inc,
+                                  delta_amount:
+                                    ((.sell_price_inc - $consensus)
+                                     * 100 | round / 100)}]}
+               end)
+       | map(select(.status == "ambiguous"
+                    or (.outliers | length) > 0))' "$prices_file"
 ```
 
-The majority price is the consensus; the rest are outliers. Rows at `0` are
-skipped as "not priced at that outlet" — including them buries the real findings
-under every unstocked line. Report outliers in both directions: an outlet priced
-*above* consensus is as much an error as one below.
+A price held by more than half the priced outlets is the consensus; the rest are
+outliers. If there is no strict majority, the result is `ambiguous` and no
+outliers are inferred. Rows at `0` are skipped as "not priced at that outlet" —
+including them buries the real findings under every unstocked line. Report clear
+outliers in both directions as potential findings pending human confirmation:
+above consensus may be an overcharge; below may be lost margin.
 
 ## Low-stock report (read-only)
 

@@ -79,11 +79,10 @@ rex product disable 124001                              # soft-disable (not a ha
 ## Outlet pricing
 
 Retail Express prices a product per outlet, and an outlet price silently
-overrides the master price on the product record. Read them with:
-
-```bash
-rex api GET productprices -q product_id=124001    # one row per outlet
-```
+overrides the master price on the product record. `rex api` returns one page at
+a time, so use the
+[paginated audit recipe](skill/references/recipes.md#outlet-price-divergence-read-only)
+to combine every `productprices` page before comparing outlets.
 
 **No Retail Express API can write an outlet price** — REST `productprices` is
 GET-only, and none of the four legacy SOAP APIs expose a price write. Correcting

@@ -35,34 +35,34 @@ benefit. Do not use it as a workaround.
 
 ## Detect
 
-Read the per-outlet rows for one product:
-
-```bash
-rex api GET productprices -q product_id=124001
-```
+Fetch and combine every `productprices` page for the product before comparing
+outlets. The
+[single-product audit recipe](../../skill/references/recipes.md#outlet-price-divergence-read-only)
+does this explicitly; a raw `rex api GET productprices` call returns only one
+page.
 
 One row per outlet, each with its own `sell_price_inc`. Divergence rule: among
-rows priced above zero, the majority price is the consensus and the rest are
-outliers. Report outliers in both directions — an outlet priced above consensus
-is overcharging, which is as much an error as undercharging.
+rows priced above zero, a price held by more than half of those remaining rows
+is the consensus and the rest are outliers. If no price has that strict
+majority, the result is ambiguous: report the competing prices and do not
+classify outliers. For a clear consensus, report outliers in both directions as
+potential findings pending human confirmation — above consensus may be an
+overcharge; below may be lost margin.
 
 Rows at `0` mean "not priced at that outlet" and are skipped; including them
 buries real findings under every unstocked line.
 
-The single-product and whole-catalogue audit commands, with the `jq` that
-implements this rule, are in
-[the recipes reference](../../skill/references/recipes.md#outlet-price-divergence-read-only).
-A full sweep is roughly sixty requests and is cheap enough to run on a schedule.
+The same recipes reference includes the whole-catalogue command. A full sweep is
+roughly sixty requests and is cheap enough to run on a schedule.
 
 ## Correct
 
-1. Report the finding: product id, outlet id, current price, consensus price,
-   and the delta.
+1. Report the potential finding: product id, outlet id, current price,
+   consensus price, and the delta amount. For an ambiguous divergence, report
+   the competing prices for human investigation instead; do not apply a
+   correction until a human establishes the intended price.
 2. A human changes the price for that outlet in Retail Express Admin. Nothing in
    `rex` can do this step.
 3. Re-read `productprices` for the product and confirm the outlet row now
-   matches the consensus.
-
-Step 3 is not optional. The correction happened in a system `rex` cannot observe
-until it asks again, so a price is only fixed once the read-back says so — never
-because someone said they had done it.
+   matches the consensus. Only call the price fixed when that read-back matches,
+   never merely because someone said they changed it.

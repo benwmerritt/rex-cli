@@ -40,9 +40,11 @@ _Avoid_: local price, store price, price override (as if a distinct object).
 
 **Price divergence**:
 Two or more Outlets holding different Outlet prices for the same Product. The
-majority price is the *consensus*; the others are *outliers*, in either
-direction — above consensus is an overcharge, below is lost margin. Rows priced
-at zero mean "not priced at that Outlet", not "free".
+price held by a strict majority of priced Outlets is the *consensus*; the others
+are *outliers*. If no price has a strict majority, there is no consensus and the
+divergence is *ambiguous*. An outlier above consensus is a potential overcharge;
+one below is potential lost margin, pending human confirmation. Rows priced at
+zero mean "not priced at that Outlet", not "free".
 _Avoid_: mismatch, discrepancy (unqualified), error (it may be deliberate).
 
 **Promotion**:

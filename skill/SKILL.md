@@ -146,17 +146,22 @@ expose a price write. Correcting one is a human action in Retail Express Admin.
 This is a property of the vendor's API, not a missing credential; `rex doctor`
 will not unblock it.
 
-Read them with `rex api GET productprices -q product_id=<id>`, one row per
-outlet. Divergence rule: among rows with `sell_price_inc > 0`, the majority price
-is the consensus and the rest are outliers, in **either** direction. Treat `0` as
-"not priced at that outlet" and skip it. Full audit recipe, single product and
-whole catalogue: [references/recipes.md](references/recipes.md#outlet-price-divergence-read-only).
+Audit them with the paginated procedure in the recipes reference. It fetches and
+combines every `productprices` page before calculating a result; a raw
+`rex api GET productprices -q product_id=<id>` call returns only one page.
+Divergence rule: among rows with `sell_price_inc > 0`, a price held by more than
+half of those remaining priced rows is the consensus and the rest are outliers,
+in **either** direction. If no price has that strict majority, report an
+ambiguous divergence and do not classify outliers. Treat `0` as "not priced at
+that outlet" and skip it. Full audit recipe, single product and whole catalogue:
+[references/recipes.md](references/recipes.md#outlet-price-divergence-read-only).
 
 **Always check, and always say so.** Whenever you inspect a specific product,
 read its per-outlet prices too and report any divergence unprompted — with the
-outlet ids, both prices, and the delta. A silent price gap is a real loss of
-margin or a real overcharge, and nobody goes looking for one they were not told
-about.
+outlet ids, both prices, and the delta amount. Describe a clear outlier as a
+potential loss of margin or potential overcharge until a human confirms whether
+the difference is intentional. Nobody goes looking for a silent price gap they
+were not told about.
 
 Two things not to do:
 
@@ -166,8 +171,9 @@ Two things not to do:
   have made a live pricing write that fixed nothing.
 - **Never report an outlet price as fixed.** You cannot make that change. Hand
   back the product id, the outlet id, the current price, and the target price,
-  then re-read `productprices` once the human says they have done it and confirm
-  from the response before calling it resolved.
+  then rerun the same all-pages `productprices` procedure once the human says
+  they have done it and confirm from the combined response before calling it
+  resolved.
 
 ## Sales stats
 
