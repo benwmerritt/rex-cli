@@ -172,12 +172,12 @@ Two things not to do:
   `sell_price_inc` on the product record does not clear or overwrite an outlet
   override. The outlet keeps its old price, the master silently changes, and you
   have made a live pricing write that fixed nothing.
-- **Never report an outlet price as fixed.** You cannot make that change. Hand
-  back the product id, the outlet id, the current price, and the human-confirmed
-  target price, then rerun the same all-pages `productprices` procedure once the
-  human says they have done it. Compare the combined response with that target,
-  not automatically with consensus, before calling it resolved or verifying an
-  approved exception.
+- **Never report an outlet price as fixed before verification.** You cannot make
+  that change yourself. Hand back the product id, the outlet id, the current
+  price, and the human-confirmed target price, then rerun the same all-pages
+  `productprices` procedure once the human says they have done it. Compare the
+  combined response with that target, not automatically with consensus, before
+  calling it resolved or verifying an approved exception.
 
 ## Sales stats
 
