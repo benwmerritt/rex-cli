@@ -170,14 +170,18 @@ jq -s 'map(select((.sell_price_inc | type) == "number"
 )
 ```
 
-Zero positive-priced outlets returns `no_priced_outlets`; one returns
-`not_comparable`. With at least two, a price held by more than half the priced
-outlets is the consensus and the rest are outliers. If there is no strict
-majority, the result is `ambiguous` and no outliers are inferred. Rows at `0` are
-skipped as "not priced at that outlet" — including them buries the real findings
-under every unstocked line. Report clear outliers in both directions as
-potential findings pending human confirmation: above consensus may be an
-overcharge; below may be lost margin. `price_difference` is the signed absolute
+In the single-product result, zero positive-priced outlets returns
+`no_priced_outlets`; one returns `not_comparable`. The whole-catalogue report
+intentionally omits products with fewer than two positive-priced outlets, so
+those two statuses do not appear there.
+
+With at least two priced outlets, a price held by more than half of them is the
+consensus and the rest are outliers. If there is no strict majority, the result
+is `ambiguous` and no outliers are inferred. Rows at `0` are skipped as "not
+priced at that outlet" — including them buries the real findings under every
+unstocked line. Report clear outliers in both directions as potential findings
+pending human confirmation: above consensus may be an overcharge; below may be
+lost margin. `price_difference` is the signed outlet-price-minus-consensus
 difference in currency units, rounded to two decimal places; it is not a
 percentage.
 

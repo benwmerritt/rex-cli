@@ -66,7 +66,8 @@ roughly sixty requests and is cheap enough to run on a schedule.
 ## Correct
 
 1. Report the potential finding: product id, outlet id, current price,
-   consensus price, and the absolute price difference in currency units.
+   consensus price, and the signed price difference in currency units (outlet
+   price minus consensus).
 2. A human confirms the target price. For an ambiguous divergence, or when an
    intentional outlet price differs from consensus, record the approved target
    as an exception; do not infer a correction from consensus alone.

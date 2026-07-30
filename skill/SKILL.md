@@ -162,13 +162,13 @@ catalogue:
 
 **Always check, and always say so.** Whenever you inspect a specific product,
 read its per-outlet prices too and report any divergence unprompted — with the
-outlet ids, both prices, and the absolute price difference in currency units.
-Describe a clear outlier as a potential loss of margin or potential overcharge
-until a human confirms whether the difference is intentional and names the
-target price. Consensus detects a potential outlier; it does not authorize a
-correction. Record an approved exception when the confirmed target intentionally
-differs from consensus. Nobody goes looking for a silent price gap they were not
-told about.
+outlet ids, both prices, and the signed price difference in currency units
+(outlet price minus consensus). Describe a clear outlier as a potential loss of
+margin or potential overcharge until a human confirms whether the difference is
+intentional and names the target price. Consensus detects a potential outlier;
+it does not authorize a correction. Record an approved exception when the
+confirmed target intentionally differs from consensus. Nobody goes looking for
+a silent price gap they were not told about.
 
 Two things not to do:
 
