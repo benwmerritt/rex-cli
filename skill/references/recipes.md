@@ -124,7 +124,7 @@ jq -s 'map(select((.sell_price_inc | type) == "number"
                   outliers: [$rows[]
                              | select(.sell_price_inc != $consensus)
                              | {outlet_id, price: .sell_price_inc,
-                                delta_amount:
+                                price_difference:
                                   ((.sell_price_inc - $consensus)
                                    * 100 | round / 100)}]}
              end
@@ -161,7 +161,7 @@ jq -s 'map(select((.sell_price_inc | type) == "number"
                     outliers: [$rows[]
                                | select(.sell_price_inc != $consensus)
                                | {outlet_id, price: .sell_price_inc,
-                                  delta_amount:
+                                  price_difference:
                                     ((.sell_price_inc - $consensus)
                                      * 100 | round / 100)}]}
                end)
@@ -177,7 +177,9 @@ majority, the result is `ambiguous` and no outliers are inferred. Rows at `0` ar
 skipped as "not priced at that outlet" — including them buries the real findings
 under every unstocked line. Report clear outliers in both directions as
 potential findings pending human confirmation: above consensus may be an
-overcharge; below may be lost margin.
+overcharge; below may be lost margin. `price_difference` is the signed absolute
+difference in currency units, rounded to two decimal places; it is not a
+percentage.
 
 ## Low-stock report (read-only)
 
