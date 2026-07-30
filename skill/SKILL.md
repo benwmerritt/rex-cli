@@ -151,24 +151,26 @@ scope:
 Audit them with the paginated procedure in the recipes reference. It fetches and
 combines every `productprices` page before calculating a result; a raw
 `rex api GET productprices -q product_id=<id>` call returns only one page.
-Divergence rule: after filtering to rows with `sell_price_inc > 0`, zero or one
-remaining row means there is no comparable outlet-price divergence. With at
-least two rows, a price held by more than half of them is the consensus and the
-rest are outliers, in **either** direction. If no price has that strict majority,
-report an ambiguous divergence and do not classify outliers. Treat `0` as "not
-priced at that outlet" and skip it. Full audit recipe, single product and whole
-catalogue:
+Divergence rule: normalize `sell_price_inc` values to integer cents, then filter
+to rows above zero cents. Zero or one remaining row means there is no comparable
+outlet-price divergence. With at least two rows, a price held by more than half
+of them is the consensus and the rest are outliers, in **either** direction. If
+no price has that strict majority, report an ambiguous divergence and do not
+classify outliers. Treat `0` as "not priced at that outlet" and skip it. Full
+audit recipe, single product and whole catalogue:
 [references/recipes.md](references/recipes.md#outlet-price-divergence-read-only).
 
 **Always check, and always say so.** Whenever you inspect a specific product,
-read its per-outlet prices too and report any divergence unprompted — with the
-outlet ids, both prices, and the signed price difference in currency units
-(outlet price minus consensus). Describe a clear outlier as a potential loss of
-margin or potential overcharge until a human confirms whether the difference is
-intentional and names the target price. Consensus detects a potential outlier;
-it does not authorize a correction. Record an approved exception when the
-confirmed target intentionally differs from consensus. Nobody goes looking for
-a silent price gap they were not told about.
+read its per-outlet prices too and report any divergence unprompted. For a clear
+majority, include the outlet ids, prices, consensus, and signed
+outlet-minus-consensus difference in currency units. For an ambiguous result,
+include the outlet ids and competing prices without consensus-derived fields.
+Describe a clear outlier as a potential loss of margin or potential overcharge
+until a human confirms whether the difference is intentional and names the
+target price. Consensus detects a potential outlier; it does not authorize a
+correction. Record an approved exception when the confirmed target intentionally
+differs from consensus. Nobody goes looking for a silent price gap they were not
+told about.
 
 Two things not to do:
 

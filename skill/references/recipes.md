@@ -130,36 +130,44 @@ One product, in that same shell:
 
 ```bash
 (
+product_id=124001
 prices_file=$(mktemp)
 trap 'rm -f "$prices_file"' EXIT
-collect_productprices "$prices_file" product_id=124001
+collect_productprices "$prices_file" product_id="$product_id"
 
-jq -s 'map(select((.sell_price_inc | type) == "number"
-                  and .sell_price_inc > 0)) as $rows
+jq -s --argjson product_id "$product_id" '
+         map({outlet_id,
+              price_cents: (.sell_price_inc * 100 | round)})
+       | map(select(.price_cents > 0)) as $rows
        | if ($rows | length) == 0 then
-           {status: "no_priced_outlets", consensus: null, outliers: []}
+           {status: "no_priced_outlets", product_id: $product_id,
+            consensus: null, outliers: []}
          elif ($rows | length) == 1 then
-           {status: "not_comparable", consensus: null,
+           {status: "not_comparable", product_id: $product_id,
+            consensus: null,
             priced_outlet: {outlet_id: $rows[0].outlet_id,
-                            price: $rows[0].sell_price_inc},
+                            price: ($rows[0].price_cents / 100)},
             outliers: []}
          else
            ($rows | length) as $count
-           | ($rows | group_by(.sell_price_inc)) as $groups
+           | ($rows | group_by(.price_cents)) as $groups
            | ($groups | map(select(length * 2 > $count))) as $majorities
            | if ($majorities | length) == 0 then
-               {status: "ambiguous", consensus: null,
-                prices: [$groups[] | {price: .[0].sell_price_inc,
-                                      outlet_count: length}]}
+               {status: "ambiguous", product_id: $product_id,
+                prices: [$groups[]
+                         | {price: (.[0].price_cents / 100),
+                            outlet_count: length,
+                            outlet_ids: map(.outlet_id)}]}
              else
-               ($majorities[0][0].sell_price_inc) as $consensus
-               | {status: "ok", consensus: $consensus,
+               ($majorities[0][0].price_cents) as $consensus_cents
+               | {status: "ok", product_id: $product_id,
+                  consensus: ($consensus_cents / 100),
                   outliers: [$rows[]
-                             | select(.sell_price_inc != $consensus)
-                             | {outlet_id, price: .sell_price_inc,
+                             | select(.price_cents != $consensus_cents)
+                             | {outlet_id,
+                                price: (.price_cents / 100),
                                 price_difference:
-                                  (((.sell_price_inc * 100 | round)
-                                    - ($consensus * 100 | round))
+                                  ((.price_cents - $consensus_cents)
                                    / 100)}]}
              end
          end' "$prices_file"
@@ -175,8 +183,9 @@ prices_file=$(mktemp)
 trap 'rm -f "$prices_file"' EXIT
 collect_productprices "$prices_file"
 
-jq -r 'select(.sell_price_inc > 0)
-       | [.product_id, .outlet_id, .sell_price_inc]
+jq -r '[.product_id, .outlet_id,
+        (.sell_price_inc * 100 | round)]
+       | select(.[2] > 0)
        | @tsv' "$prices_file" \
   | LC_ALL=C sort -t $'\t' -k1,1n -k3,3n \
   | jq -Rn '
@@ -184,23 +193,24 @@ jq -r 'select(.sell_price_inc > 0)
         if ($rows | length) < 2 then null
         else
           ($rows | length) as $count
-          | ($rows | group_by(.price)) as $groups
+          | ($rows | group_by(.price_cents)) as $groups
           | ($groups | map(select(length * 2 > $count))) as $majorities
           | if ($majorities | length) == 0 then
               {status: "ambiguous", product_id: $rows[0].product_id,
-               consensus: null,
-               prices: [$groups[] | {price: .[0].price,
-                                     outlet_count: length}]}
+               prices: [$groups[]
+                        | {price: (.[0].price_cents / 100),
+                           outlet_count: length,
+                           outlet_ids: map(.outlet_id)}]}
             else
-              ($majorities[0][0].price) as $consensus
+              ($majorities[0][0].price_cents) as $consensus_cents
               | {status: "ok", product_id: $rows[0].product_id,
-                 consensus: $consensus,
+                 consensus: ($consensus_cents / 100),
                  outliers: [$rows[]
-                            | select(.price != $consensus)
-                            | {outlet_id, price,
+                            | select(.price_cents != $consensus_cents)
+                            | {outlet_id,
+                               price: (.price_cents / 100),
                                price_difference:
-                                 (((.price * 100 | round)
-                                   - ($consensus * 100 | round))
+                                 ((.price_cents - $consensus_cents)
                                   / 100)}]}
             end
         end;
@@ -214,7 +224,7 @@ jq -r 'select(.sell_price_inc > 0)
              ($line | split("\t")
                     | {product_id: (.[0] | tonumber),
                        outlet_id: (.[1] | tonumber),
-                       price: (.[2] | tonumber)}) as $row
+                       price_cents: (.[2] | tonumber)}) as $row
              | if .product_id == null or .product_id == $row.product_id then
                  .product_id = $row.product_id
                  | .rows += [$row]
@@ -240,13 +250,14 @@ object per finding, keeping only one product's outlet rows in memory at a time.
 
 With at least two priced outlets, a price held by more than half of them is the
 consensus and the rest are outliers. If there is no strict majority, the result
-is `ambiguous` and no outliers are inferred. Rows at `0` are skipped as "not
-priced at that outlet" — including them buries the real findings under every
-unstocked line. Report clear outliers in both directions as potential findings
-pending human confirmation: above consensus may be an overcharge; below may be
-lost margin. `price_difference` is the signed outlet-price-minus-consensus
-difference in currency units, calculated by rounding each price to integer cents
-before subtraction; it is not a percentage.
+is `ambiguous` and no outliers are inferred. Prices are normalized to integer
+cents before grouping and comparison. Rows that normalize to `0` are skipped as
+"not priced at that outlet" — including them buries the real findings under
+every unstocked line. Report clear outliers in both directions as potential
+findings pending human confirmation: above consensus may be an overcharge; below
+may be lost margin. `price_difference` is the signed
+outlet-price-minus-consensus difference in currency units, calculated with those
+integer-cent values; it is not a percentage.
 
 ## Low-stock report (read-only)
 

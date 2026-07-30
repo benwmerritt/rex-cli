@@ -48,14 +48,15 @@ outlets. The
 does this explicitly; a raw `rex api GET productprices` call returns only one
 page.
 
-One row per outlet, each with its own `sell_price_inc`. Divergence rule: among
-rows priced above zero, fewer than two rows means there is no comparable
-outlet-price divergence. With at least two rows, a price held by more than half
-of them is the consensus and the rest are outliers. If no price has that strict
-majority, the result is ambiguous: report the competing prices and do not
-classify outliers. For a clear consensus, report outliers in both directions as
-potential findings pending human confirmation — above consensus may be an
-overcharge; below may be lost margin.
+One row per outlet, each with its own `sell_price_inc`. Normalize those values to
+integer cents before comparison. Among rows above zero cents, fewer than two
+rows means there is no comparable outlet-price divergence. With at least two
+rows, a price held by more than half of them is the consensus and the rest are
+outliers. If no price has that strict majority, the result is ambiguous: report
+the competing prices and outlet counts and do not classify outliers. For a clear
+consensus, report outliers in both directions as potential findings pending
+human confirmation — above consensus may be an overcharge; below may be lost
+margin.
 
 Rows at `0` mean "not priced at that outlet" and are skipped; including them
 buries real findings under every unstocked line.
@@ -65,9 +66,11 @@ roughly sixty requests and is cheap enough to run on a schedule.
 
 ## Correct
 
-1. Report the potential finding: product id, outlet id, current price,
-   consensus price, and the signed price difference in currency units (outlet
-   price minus consensus).
+1. Report the potential finding with its product id, outlet ids, and current
+   prices. For a strict-majority result, also include the consensus price and
+   signed price difference in currency units (outlet price minus consensus). For
+   an ambiguous result, report each competing price and its outlet count instead;
+   do not emit consensus-derived fields.
 2. A human confirms the target price. For an ambiguous divergence, or when an
    intentional outlet price differs from consensus, record the approved target
    as an exception; do not infer a correction from consensus alone.

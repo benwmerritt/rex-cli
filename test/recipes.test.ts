@@ -83,6 +83,7 @@ collect_productprices "$OUTPUT_FILE"
         FIXTURE_DIR: dir,
         OUTPUT_FILE: outputFile,
       },
+      timeout: 5_000,
     });
 
     return {
@@ -110,7 +111,22 @@ describe("collect_productprices documentation recipe", () => {
     ]);
 
     expect(result.exitCode).toBe(0);
-    expect(result.output.trim().split("\n")).toHaveLength(3);
+    expect(
+      result.output
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+    ).toEqual([row(1), row(2), row(3)]);
+  });
+
+  it("collects a full final page at an exact page-size boundary", () => {
+    const result = runCollector([
+      page(1, 4, [row(1), row(2)]),
+      page(2, 4, [row(3), row(4)]),
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output.trim().split("\n")).toHaveLength(4);
   });
 
   it("rejects an early empty page", () => {
