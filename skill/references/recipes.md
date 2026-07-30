@@ -52,6 +52,7 @@ collect_productprices() {
 
   local requested_page=1
   local body meta returned_page page_size total_records page_records
+  local unique_records
   local expected_page_size="" expected_total_records="" received_records=0
 
   while :; do
@@ -106,6 +107,16 @@ collect_productprices() {
       if ((received_records != total_records)); then
         printf 'productprices pagination returned %d of %d records\n' \
           "$received_records" "$total_records" >&2
+        return 1
+      fi
+      unique_records=$(
+        jq -r '[.product_id, .outlet_id] | @tsv' "$output_file" \
+          | LC_ALL=C sort -u \
+          | wc -l
+      )
+      if ((unique_records != total_records)); then
+        printf 'productprices pagination returned %d unique keys for %d records\n' \
+          "$unique_records" "$total_records" >&2
         return 1
       fi
       break
@@ -220,10 +231,10 @@ jq -r 'select(.sell_price_inc > 0)
 In the single-product result, zero positive-priced outlets returns
 `no_priced_outlets`; one returns `not_comparable`. The whole-catalogue report
 intentionally omits products with fewer than two positive-priced outlets, so
-those two statuses do not appear there. The collector rejects truncated pages or
-metadata changes instead of silently producing an incomplete audit. The
-catalogue pipeline sorts on disk and emits one JSON object per finding, keeping
-only one product's outlet rows in memory at a time.
+those two statuses do not appear there. The collector rejects truncated pages,
+metadata changes, or duplicate product/outlet keys instead of silently producing
+an incomplete audit. The catalogue pipeline sorts on disk and emits one JSON
+object per finding, keeping only one product's outlet rows in memory at a time.
 
 With at least two priced outlets, a price held by more than half of them is the
 consensus and the rest are outliers. If there is no strict majority, the result
