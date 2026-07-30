@@ -46,8 +46,9 @@ price held by a strict majority of priced Outlets is the *consensus*; the others
 are *outliers*. If no price has a strict majority, there is no consensus and the
 divergence is *ambiguous*. An outlier above consensus is a potential overcharge;
 one below is potential lost margin, pending human confirmation. Rows priced at
-zero mean "not priced at that Outlet", not "free". Consensus detects potential
-outliers; it does not replace the human-confirmed target price.
+zero mean "not priced at that Outlet", not "free". Fewer than two positive-priced
+Outlets is not a comparable divergence. Consensus detects potential outliers; it
+does not replace the human-confirmed target price.
 _Avoid_: mismatch, discrepancy (unqualified), error (it may be deliberate).
 
 **Promotion**:

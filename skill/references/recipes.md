@@ -79,6 +79,7 @@ collect_productprices() {
         and $size > 0
         and $total >= 0
         and (.data | length) <= $size
+        and (.data | length) <= $total
         and ($total == 0 or (.data | length) > 0)
     ' <<<"$body" >/dev/null
 
@@ -104,6 +105,11 @@ jq -s 'map(select((.sell_price_inc | type) == "number"
                   and .sell_price_inc > 0)) as $rows
        | if ($rows | length) == 0 then
            {status: "no_priced_outlets", consensus: null, outliers: []}
+         elif ($rows | length) == 1 then
+           {status: "not_comparable", consensus: null,
+            priced_outlet: {outlet_id: $rows[0].outlet_id,
+                            price: $rows[0].sell_price_inc},
+            outliers: []}
          else
            ($rows | length) as $count
            | ($rows | group_by(.sell_price_inc)) as $groups
@@ -138,7 +144,8 @@ collect_productprices "$prices_file"
 jq -s 'map(select((.sell_price_inc | type) == "number"
                   and .sell_price_inc > 0))
        | group_by(.product_id)
-       | map(. as $rows
+       | map(select(length >= 2)
+             | . as $rows
              | ($rows | length) as $count
              | ($rows | group_by(.sell_price_inc)) as $groups
              | ($groups | map(select(length * 2 > $count))) as $majorities
@@ -163,12 +170,14 @@ jq -s 'map(select((.sell_price_inc | type) == "number"
 )
 ```
 
-A price held by more than half the priced outlets is the consensus; the rest are
-outliers. If there is no strict majority, the result is `ambiguous` and no
-outliers are inferred. Rows at `0` are skipped as "not priced at that outlet" —
-including them buries the real findings under every unstocked line. Report clear
-outliers in both directions as potential findings pending human confirmation:
-above consensus may be an overcharge; below may be lost margin.
+Zero positive-priced outlets returns `no_priced_outlets`; one returns
+`not_comparable`. With at least two, a price held by more than half the priced
+outlets is the consensus and the rest are outliers. If there is no strict
+majority, the result is `ambiguous` and no outliers are inferred. Rows at `0` are
+skipped as "not priced at that outlet" — including them buries the real findings
+under every unstocked line. Report clear outliers in both directions as
+potential findings pending human confirmation: above consensus may be an
+overcharge; below may be lost margin.
 
 ## Low-stock report (read-only)
 

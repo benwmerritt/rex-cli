@@ -139,22 +139,25 @@ Retail Express prices a Product **per Outlet**. Where an outlet price exists it
 reveals the override. Two outlets routinely end up selling the same product at
 different prices with no visible cause.
 
-As last verified on **2026-07-30**, REST v2.1 `productprices` is GET-only (live
-POST and PUT probes returned 404), and the documented V2 Warehouse Management,
-Webstore, Accounting, and Inventory Planning SOAP interfaces expose no
-outlet-price write. Correcting one is a human action in Retail Express Admin.
-This is a capability of those documented versions, not a missing credential;
-`rex doctor` will not unblock it. Version scope and vendor sources:
+In the vendor documentation last checked on **2026-07-30**, the REST v2.1
+operation list exposes `productprices` as GET-only, and the published V2
+Warehouse Management, Webstore, Accounting, and Inventory Planning SOAP method
+lists expose no outlet-price write. Correcting one is a human action in Retail
+Express Admin. This is a capability of those documented versions, not a missing
+credential; `rex doctor` will not unblock it. Exact vendor sources and version
+scope:
 [the outlet-pricing workflow](../docs/workflows/outlet-pricing.md#what-cannot-be-done).
 
 Audit them with the paginated procedure in the recipes reference. It fetches and
 combines every `productprices` page before calculating a result; a raw
 `rex api GET productprices -q product_id=<id>` call returns only one page.
-Divergence rule: among rows with `sell_price_inc > 0`, a price held by more than
-half of those remaining priced rows is the consensus and the rest are outliers,
-in **either** direction. If no price has that strict majority, report an
-ambiguous divergence and do not classify outliers. Treat `0` as "not priced at
-that outlet" and skip it. Full audit recipe, single product and whole catalogue:
+Divergence rule: after filtering to rows with `sell_price_inc > 0`, zero or one
+remaining row means there is no comparable outlet-price divergence. With at
+least two rows, a price held by more than half of them is the consensus and the
+rest are outliers, in **either** direction. If no price has that strict majority,
+report an ambiguous divergence and do not classify outliers. Treat `0` as "not
+priced at that outlet" and skip it. Full audit recipe, single product and whole
+catalogue:
 [references/recipes.md](references/recipes.md#outlet-price-divergence-read-only).
 
 **Always check, and always say so.** Whenever you inspect a specific product,

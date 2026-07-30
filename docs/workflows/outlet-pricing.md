@@ -22,7 +22,7 @@ documentation before relying on it for a later API version.
 
 | Interface | Outlet price write |
 | --- | --- |
-| [REST v2.1](https://developer.retailexpress.com.au/getting-started) [`productprices`](https://developer.retailexpress.com.au/api-details) | No — the documented operation is GET; live POST and PUT probes returned 404 |
+| [REST v2.1](https://developer.retailexpress.com.au/getting-started) [`productprices`](https://developer.retailexpress.com.au/api-details) | No — the vendor's published operation list documents GET only |
 | Legacy SOAP: [Warehouse Management V2](https://www.retailexpressmedia.com/documentation/api/v2/Retail%20Express%20-%20V2%20Warehouse%20Management%20System%20API.pdf) | No — on-demand methods cover stocktake, dispatch, fulfilment, and receiving |
 | Legacy SOAP: [Webstore V2](https://www.retailexpressmedia.com/documentation/api/v2/Retail%20Express%20-%20V2%20Web%20Store%20API.pdf) | No — product and pricing methods are retrieval operations |
 | Legacy SOAP: [Accounting V2](https://www.retailexpressmedia.com/documentation/api/v2/Retail%20Express%20-%20V2%20Accounting%20API.pdf) | No — prices appear only as read fields |
@@ -49,8 +49,9 @@ does this explicitly; a raw `rex api GET productprices` call returns only one
 page.
 
 One row per outlet, each with its own `sell_price_inc`. Divergence rule: among
-rows priced above zero, a price held by more than half of those remaining rows
-is the consensus and the rest are outliers. If no price has that strict
+rows priced above zero, fewer than two rows means there is no comparable
+outlet-price divergence. With at least two rows, a price held by more than half
+of them is the consensus and the rest are outliers. If no price has that strict
 majority, the result is ambiguous: report the competing prices and do not
 classify outliers. For a clear consensus, report outliers in both directions as
 potential findings pending human confirmation — above consensus may be an
