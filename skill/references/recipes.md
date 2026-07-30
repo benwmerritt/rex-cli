@@ -141,39 +141,66 @@ prices_file=$(mktemp)
 trap 'rm -f "$prices_file"' EXIT
 collect_productprices "$prices_file"
 
-jq -s 'map(select((.sell_price_inc | type) == "number"
-                  and .sell_price_inc > 0))
-       | group_by(.product_id)
-       | map(select(length >= 2)
-             | . as $rows
-             | ($rows | length) as $count
-             | ($rows | group_by(.sell_price_inc)) as $groups
-             | ($groups | map(select(length * 2 > $count))) as $majorities
-             | if ($majorities | length) == 0 then
-                 {status: "ambiguous", product_id: $rows[0].product_id,
-                  consensus: null,
-                  prices: [$groups[] | {price: .[0].sell_price_inc,
-                                        outlet_count: length}]}
+jq -r 'select(.sell_price_inc > 0)
+       | [.product_id, .outlet_id, .sell_price_inc]
+       | @tsv' "$prices_file" \
+  | LC_ALL=C sort -t $'\t' -k1,1n -k3,3n \
+  | jq -Rn '
+      def report($rows):
+        if ($rows | length) < 2 then null
+        else
+          ($rows | length) as $count
+          | ($rows | group_by(.price)) as $groups
+          | ($groups | map(select(length * 2 > $count))) as $majorities
+          | if ($majorities | length) == 0 then
+              {status: "ambiguous", product_id: $rows[0].product_id,
+               consensus: null,
+               prices: [$groups[] | {price: .[0].price,
+                                     outlet_count: length}]}
+            else
+              ($majorities[0][0].price) as $consensus
+              | {status: "ok", product_id: $rows[0].product_id,
+                 consensus: $consensus,
+                 outliers: [$rows[]
+                            | select(.price != $consensus)
+                            | {outlet_id, price,
+                               price_difference:
+                                 ((.price - $consensus)
+                                  * 100 | round / 100)}]}
+            end
+        end;
+
+      foreach ((inputs | select(length > 0)), "__END__") as $line
+        ({product_id: null, rows: []};
+         del(.emit)
+         | if $line == "__END__" then
+             .emit = report(.rows)
+           else
+             ($line | split("\t")
+                    | {product_id: (.[0] | tonumber),
+                       outlet_id: (.[1] | tonumber),
+                       price: (.[2] | tonumber)}) as $row
+             | if .product_id == null or .product_id == $row.product_id then
+                 .product_id = $row.product_id
+                 | .rows += [$row]
                else
-                 ($majorities[0][0].sell_price_inc) as $consensus
-                 | {status: "ok", product_id: $rows[0].product_id,
-                    consensus: $consensus,
-                    outliers: [$rows[]
-                               | select(.sell_price_inc != $consensus)
-                               | {outlet_id, price: .sell_price_inc,
-                                  price_difference:
-                                    ((.sell_price_inc - $consensus)
-                                     * 100 | round / 100)}]}
-               end)
-       | map(select(.status == "ambiguous"
-                    or (.outliers | length) > 0))' "$prices_file"
+                 .emit = report(.rows)
+                 | .product_id = $row.product_id
+                 | .rows = [$row]
+               end
+           end;
+         .emit // empty)
+      | select(.status == "ambiguous"
+               or (.outliers | length) > 0)'
 )
 ```
 
 In the single-product result, zero positive-priced outlets returns
 `no_priced_outlets`; one returns `not_comparable`. The whole-catalogue report
 intentionally omits products with fewer than two positive-priced outlets, so
-those two statuses do not appear there.
+those two statuses do not appear there. The catalogue pipeline sorts on disk and
+emits one JSON object per finding, keeping only one product's outlet rows in
+memory at a time.
 
 With at least two priced outlets, a price held by more than half of them is the
 consensus and the rest are outliers. If there is no strict majority, the result
