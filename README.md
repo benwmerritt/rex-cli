@@ -76,6 +76,21 @@ rex product disable 124001                              # soft-disable (not a ha
 - Price fields require `--allow-price`.
 - Every write is appended to `~/.local/state/rex/audit.jsonl`.
 
+## Outlet pricing
+
+Retail Express prices a product per outlet, and an outlet price silently
+overrides the master price on the product record. `rex api` returns one page at
+a time, so use the
+[paginated audit recipe](skill/references/recipes.md#outlet-price-divergence-read-only)
+to combine every `productprices` page before comparing outlets.
+
+As last verified on 2026-07-30, Retail Express REST v2.1 `productprices` is
+GET-only and the documented V2 SOAP interfaces expose no outlet-price write.
+Correcting one is a human action in Retail Express Admin; writing the product
+master does not clear the override. Sources, version scope, detection, and the
+audit recipe:
+[docs/workflows/outlet-pricing.md](docs/workflows/outlet-pricing.md).
+
 ## Sales stats
 
 Sales reports run against a local per-profile SQLite cache, not live API calls —

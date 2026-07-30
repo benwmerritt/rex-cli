@@ -132,6 +132,59 @@ Batch enrichment, `--set`/`--file`/`--stdin` rules, and the price gate:
 [references/writing.md](references/writing.md). Worked agent recipes:
 [references/recipes.md](references/recipes.md).
 
+## Outlet pricing
+
+Retail Express prices a Product **per Outlet**. Where an outlet price exists it
+**overrides** the master price on the product record, and nothing on that record
+reveals the override. Two outlets routinely end up selling the same product at
+different prices with no visible cause.
+
+In the vendor documentation last checked on **2026-07-30**, the REST v2.1
+operation list exposes `productprices` as GET-only, and the published V2
+Warehouse Management, Webstore, Accounting, and Inventory Planning SOAP method
+lists expose no outlet-price write. Correcting one is a human action in Retail
+Express Admin. This is a capability of those documented versions, not a missing
+credential; `rex doctor` will not unblock it. Exact vendor sources and version
+scope:
+[the outlet-pricing workflow](../docs/workflows/outlet-pricing.md#what-cannot-be-done).
+
+Audit them with the paginated procedure in the recipes reference. It fetches and
+combines every `productprices` page before calculating a result; a raw
+`rex api GET productprices -q product_id=<id>` call returns only one page.
+Divergence rule: normalize `sell_price_inc` values to integer cents, then filter
+to rows above zero cents. Zero or one remaining row means there is no comparable
+outlet-price divergence. With at least two rows, a price held by more than half
+of them is the consensus and the rest are outliers, in **either** direction. If
+no price has that strict majority, report an ambiguous divergence and do not
+classify outliers. Treat `0` as "not priced at that outlet" and skip it. Full
+audit recipe, single product and whole catalogue:
+[references/recipes.md](references/recipes.md#outlet-price-divergence-read-only).
+
+**Always check, and always say so.** Whenever you inspect a specific product,
+read its per-outlet prices too and report any divergence unprompted. For a clear
+majority, include the outlet ids, prices, consensus, and signed
+outlet-minus-consensus difference in currency units. For an ambiguous result,
+include the outlet ids and competing prices without consensus-derived fields.
+Describe a clear outlier as a potential loss of margin or potential overcharge
+until a human confirms whether the difference is intentional and names the
+target price. Consensus detects a potential outlier; it does not authorize a
+correction. Record an approved exception when the confirmed target intentionally
+differs from consensus. Nobody goes looking for a silent price gap they were not
+told about.
+
+Two things not to do:
+
+- **Never write the product master to "fix" an outlet price.** Setting
+  `sell_price_inc` on the product record does not clear or overwrite an outlet
+  override. The outlet keeps its old price, the master silently changes, and you
+  have made a live pricing write that fixed nothing.
+- **Never report an outlet price as fixed before verification.** You cannot make
+  that change yourself. Hand back the product id, the outlet id, the current
+  price, and the human-confirmed target price, then rerun the same all-pages
+  `productprices` procedure once the human says they have done it. Compare the
+  combined response with that target, not automatically with consensus, before
+  calling it resolved or verifying an approved exception.
+
 ## Sales stats
 
 Revenue / units / gross-profit reports come from a **local SQLite cache** (the

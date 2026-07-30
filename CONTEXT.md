@@ -31,6 +31,26 @@ A pricing layer on a Product — **Standard** (a percentage adjustment) or
 **Fixed** (explicit per-Product price points). Price Groups are fields on the
 Product (`price_groups`, `fixed_price_groups`), NOT a separate resource.
 
+**Outlet price**:
+A Product's price *at one Outlet* (`productprices`, one row per Outlet). Where
+one exists it overrides the Product's master price at the point of sale, and the
+Product record does not reveal that it is being overridden. Readable through the
+documented current APIs; correction is a human action in Retail Express Admin.
+Capability boundary last verified 2026-07-30; see
+`docs/workflows/outlet-pricing.md`.
+_Avoid_: local price, store price, price override (as if a distinct object).
+
+**Price divergence**:
+Two or more Outlets holding different Outlet prices for the same Product. The
+price held by a strict majority of priced Outlets is the *consensus*; the others
+are *outliers*. If no price has a strict majority, there is no consensus and the
+divergence is *ambiguous*. An outlier above consensus is a potential overcharge;
+one below is potential lost margin, pending human confirmation. Rows priced at
+zero mean "not priced at that Outlet", not "free". Fewer than two positive-priced
+Outlets is not a comparable divergence. Consensus detects potential outliers; it
+does not replace the human-confirmed target price.
+_Avoid_: mismatch, discrepancy (unqualified), error (it may be deliberate).
+
 **Promotion**:
 Not a first-class object. Running a promotion = writing promotional/web prices
 (or Fixed Price Group values) on Products and restoring them later.
