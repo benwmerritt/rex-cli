@@ -7,6 +7,11 @@ orders, transfers, and loyalty — from the terminal or scripts.
 Output is JSON by default, and writes have guardrails (dry-run, price gating,
 soft-delete, an audit log).
 
+## Contributing
+
+Keep public rex-cli commits and examples generic. Keep store-identifying names,
+business details and example records in the private store project.
+
 ## Install
 
 Building requires [Bun](https://bun.sh).
